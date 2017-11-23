@@ -1,0 +1,8 @@
+open_data_stack:
+    resource: "@OpenDataStackBundle/Controller/"
+    type:     annotation
+    prefix:   /
+
+app:
+    resource: '@AppBundle/Controller/'
+    type: annotation
