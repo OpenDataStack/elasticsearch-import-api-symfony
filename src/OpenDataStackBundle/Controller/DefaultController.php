@@ -14,15 +14,16 @@ class DefaultController extends Controller
      public function indexAction()
      {
        // TODO Shift to services
-       $connectionFactory = new FsConnectionFactory('/tmp/queue');
+       $connectionFactory = new FsConnectionFactory('/tmp/enqueue');
        $context = $connectionFactory->createContext();
 
        $data = [
          'importer' => 'opendatastack/csv',
          'uri' => 'https://datos.colombiacompra.gov.co/csvdata/2013/20136.csv'
        ];
+       $queue = $context->createQueue('importQueue');
        $context->createProducer()->send(
-         $context->createQueue('importQueue'),
+         $queue,
          $context->createMessage(json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES))
        );
 

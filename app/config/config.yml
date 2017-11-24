@@ -13,6 +13,9 @@ enqueue:
     transport:
         default:
             dsn: 'file:'
+        fs:
+            chmod: 755
+
 framework:
     #esi: ~
     #translator: { fallbacks: ['%locale%'] }

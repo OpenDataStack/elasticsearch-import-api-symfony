@@ -28,7 +28,7 @@ class ImportCommand extends ContainerAwareCommand
         $output->writeln("Starting import processor...");
 
         // TODO: Shift to services
-        $connectionFactory = new FsConnectionFactory('/tmp/queue');
+        $connectionFactory = new FsConnectionFactory('/tmp/enqueue');
         $context = $connectionFactory->createContext();
         $importQueue = $context->createQueue('importQueue');
         $queueConsumer = new QueueConsumer($context);
