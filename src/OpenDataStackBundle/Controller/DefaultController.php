@@ -4,7 +4,10 @@ namespace OpenDataStackBundle\Controller;
 
 use Symfony\Bundle\FrameworkBundle\Controller\Controller;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\Route;
+use Sensio\Bundle\FrameworkExtraBundle\Configuration\Method;
 use Enqueue\Fs\FsConnectionFactory;
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
 
 class DefaultController extends Controller
 {
@@ -35,5 +38,20 @@ class DefaultController extends Controller
            'elastic_server' => $elastic_server,
          ]
        );
+     }
+
+
+     /**
+     * @Route("/ping")
+     * @Method("POST")
+     */
+     public function pingAction(Request $request)
+     {
+
+       $data = $request->request->get('data', 'response ok : send a message in a data key');
+
+       $response = new JsonResponse($data, 200);
+
+       return $response;
      }
 }
