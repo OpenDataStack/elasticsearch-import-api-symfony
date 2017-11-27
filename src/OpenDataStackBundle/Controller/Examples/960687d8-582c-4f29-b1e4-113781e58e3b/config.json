@@ -1,0 +1,11 @@
+{
+    "id": "960687d8-582c-4f29-b1e4-113781e58e3b",
+    "type": "opendatastack/csv-importer",
+    "config": {
+        "uri": "http://demo.getdkan.com/sites/default/files/Bike_Lane.csv",
+        "model" {
+          "field one": "etc",
+          "field two": "etc"
+        }
+    }
+}

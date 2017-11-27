@@ -54,4 +54,25 @@ class DefaultController extends Controller
 
        return $response;
      }
+
+    /**
+     * @Route("/ping")
+     * @Method("POST")
+     */
+    public function addImportConfigurationAction(Request $request)
+    {
+
+      /*
+      $importConfigurationID is the same as Drupal $resourceId
+
+      save file in folder /ImportConfigurations/$importConfigurationID
+
+      */
+
+      $response = new JsonResponse($data, 200);
+
+      return $response;
+    }
+
+         
 }

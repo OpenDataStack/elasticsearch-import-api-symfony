@@ -34,10 +34,13 @@ class ImportCommand extends ContainerAwareCommand
         $queueConsumer = new QueueConsumer($context);
 
         $queueConsumer->bind('importQueue', function(PsrMessage $message) use (&$output) {
+            // update log file
           $output->writeln("Processing Job...");
           $data = json_decode($message->getBody(), true);
           $output->writeln("Import Type: " . $data['importer']);
           $output->writeln("URI: " . $data['uri']);
+          // update log file
+          // catch any exceptions and update log file with error
           return PsrProcessor::ACK;
         });
 
