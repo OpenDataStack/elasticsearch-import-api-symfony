@@ -2,6 +2,7 @@
 
 namespace OpenDataStackBundle\Controller;
 
+use Nelmio\ApiDocBundle\Annotation\ApiDoc;
 use Symfony\Bundle\FrameworkBundle\Controller\Controller;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\Route;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\Method;
@@ -56,20 +57,27 @@ class DefaultController extends Controller
      }
 
     /**
-     * @Route("/ping")
+     * @Route("/addconfig")
      * @Method("POST")
+     * @ApiDoc(
+     *   tags={"in-development"},
+     *   description="Add a new Import to Elasticsearch-Importer",
+     *   method="POST",
+     *   section="Import Configurations",
+     *   input={},
+     *   output={},
+     *   statusCodes={
+     *       200="success",
+     *       400="error",
+     *   },
+     * )
      */
     public function addImportConfigurationAction(Request $request)
     {
 
-      /*
-      $importConfigurationID is the same as Drupal $resourceId
 
-      save file in folder /ImportConfigurations/$importConfigurationID
-
-      */
-
-      $response = new JsonResponse($data, 200);
+      $val = "no";
+      $response = new JsonResponse(array("test" => $val), 200);
 
       return $response;
     }

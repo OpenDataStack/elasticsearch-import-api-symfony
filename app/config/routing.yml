@@ -3,6 +3,10 @@ open_data_stack:
     type:     annotation
     prefix:   /
 
+NelmioApiDocBundle:
+    resource: "@NelmioApiDocBundle/Resources/config/routing.yml"
+    prefix:   /api/doc
+
 app:
     resource: '@AppBundle/Controller/'
     type: annotation
