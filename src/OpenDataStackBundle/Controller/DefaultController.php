@@ -280,6 +280,88 @@ class DefaultController extends Controller {
 
     }
 
+
+    /**
+     * @Route("/import-configuration/{udid}")
+     * @Method("DELETE")
+     * @ApiDoc(
+     *   description="Delete an Import configuration",
+     *   tags={"in-development"},
+     *   method="DELETE",
+     *   requirements={
+     *    {
+     *      "name"="udid",
+     *      "dataType"="string",
+     *      "description"="udid of the resource to be deleted"
+     *    }
+     *   },
+     *   section="Import Configurations",
+     *   statusCodes={
+     *       200="success",
+     *       400="error",
+     *       404="not found",
+     *   }
+     *
+     * )
+     */
+    public function deleteConfigurationAction($udid) {
+
+        if (!$udid) {
+            $response = new JsonResponse(
+                array(
+                    "log" => array(
+                        "status" => "fail",
+                        "message" => "udid parameters required"
+                    )
+                ),
+                400);
+            return $response;
+        }
+
+        if (!file_exists("/tmp/configurations/{$udid}")) {
+            $response = new JsonResponse(
+                array(
+                    "log" => array(
+                        "status" => "fail",
+                        "message" => "no configuration with the udid: {$udid}"
+                    )
+                ),
+                404);
+            return $response;
+        }
+
+        // remove the folder
+        $fs = $this->container->get('filesystem');
+
+        try {
+
+            $fs->remove("/tmp/configurations/{$udid}");
+
+        } catch (IOException $exception) {
+
+            $response = new JsonResponse(
+                array(
+                    "log" => array(
+                        "status" => "fail",
+                        "message" => "IOException on delete {$udid}",
+                    )
+                ),
+                400);
+            return $response;
+        }
+
+        $response = new JsonResponse(
+            array(
+                "log" => array(
+                    "status" => "success",
+                    "message" => "{$udid} deleted",
+                )
+            ),
+            200);
+        return $response;
+
+    }
+
     /**
      * @Route("/debug")
      */
