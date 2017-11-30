@@ -362,6 +362,84 @@ class DefaultController extends Controller {
 
     }
 
+
+    /**
+     * @Route("/import-configuration/{udid}")
+     * @Method("PUT")
+     * @ApiDoc(
+     *   description="Delete an Import configuration",
+     *   tags={"in-development"},
+     *   method="PUT",
+     *   requirements={
+     *    {
+     *      "name"="udid",
+     *      "dataType"="string",
+     *      "description"="udid of the resource to be deleted"
+     *    }
+     *   },
+     *   section="Import Configurations",
+     *   statusCodes={
+     *       200="success",
+     *       400="error",
+     *       404="not found",
+     *   }
+     *
+     * )
+     */
+    public function requestImportConfigurationAction($udid) {
+
+        if (!$udid) {
+            $response = new JsonResponse(
+                array(
+                    "log" => array(
+                        "status" => "fail",
+                        "message" => "udid parameters required"
+                    )
+                ),
+                400);
+            return $response;
+        }
+
+        if (!file_exists("/tmp/configurations/{$udid}")) {
+            $response = new JsonResponse(
+                array(
+                    "log" => array(
+                        "status" => "fail",
+                        "message" => "no configuration with the udid: {$udid}"
+                    )
+                ),
+                404);
+            return $response;
+        }
+
+
+        $logJson = file_get_contents("/tmp/configurations/{$udid}/log.json");
+        $log = json_decode($logJson);
+
+        $log->status = "queued";
+        $log->message = "queued";
+
+        $logJson = json_encode($log);
+        file_put_contents("/tmp/configurations/{$udid}/log.json", $logJson);
+
+        // read value from file to ensure that the status is persisted
+        $logJson = file_get_contents("/tmp/configurations/{$udid}/log.json");
+        $log = json_decode($logJson);
+
+        $response = new JsonResponse(
+            array(
+                "log" => array(
+                    "status" => "success",
+                    "message" => $log->message,
+                    "flag" => $log->status
+                )
+            ),
+            200);
+
+        return $response;
+
+    }
+
     /**
      * @Route("/debug")
      */
