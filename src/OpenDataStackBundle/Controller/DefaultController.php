@@ -59,7 +59,7 @@ class DefaultController extends Controller
      }
 
     /**
-     * @Route("/addconfig")
+     * @Route("/import-configuration")
      * @Method("POST")
      * @ApiDoc(
      *   tags={"in-development"},
@@ -77,10 +77,12 @@ class DefaultController extends Controller
      */
     public function addImportConfigurationAction(Request $request)
     {
-      $payloadJson = $request->request->get('payload');
+      $payloadJson = $request->request->get('config');
 
       if (!$payloadJson) {
-        $response = new JsonResponse(array("status" => "fail", "message" => "empty payload"), 400);
+        $response = new JsonResponse(
+          array("log" => array("status" => "fail", "message" => "empty config parameters")),
+          400);
         return $response;
       }
 
@@ -88,30 +90,38 @@ class DefaultController extends Controller
 
       $payload = json_decode($payloadJson);
       if (json_last_error() != JSON_ERROR_NONE) {
-        $response = new JsonResponse(array("status" => "fail", "message" => json_last_error_msg()), 400);
+        $response = new JsonResponse(
+          array("log" => array("status" => "fail", "message" => json_last_error_msg())),
+          400);
         return $response;
       }
 
       if (!property_exists($payload, "id") && !property_exists($payload, "type") && !property_exists($payload, "config")) {
-        $response = new JsonResponse(array("status" => "fail", "message" => "missing keys"), 400);
+        $response = new JsonResponse(
+          array("log" => array("status" => "fail", "message" => "Missing keys")),
+          400);
         return $response;
       }
 
       $udid = $payload->id;
 
       if ($fs->exists("/tmp/{$udid}")) {
-        $response = new JsonResponse(array("status" => "fail", "message" => "Exist already"), 400);
+        $response = new JsonResponse(
+          array("log" => array("status" => "fail", "message" => "Import configuration exist already")),
+          400);
         return $response;
       }
 
+      // Persist import-configuration in the filesystem
       try {
         $fs->mkdir("/tmp/{$udid}");
       } catch (IOException $exception) {
-        $response = new JsonResponse(array("status" => "fail", "message" => "Folder creation error"), 400);
+        $response = new JsonResponse(
+          array("log" => array("status" => "fail", "message" => "Folder creation error")),
+          400);
         return $response;
       }
 
-      //$payload
       $date = new \DateTime('now');
       $timestamp = $date->format('Y-m-d H:i:s');
       $log = array("status" => "New", "message" => "{$udid} created at {$timestamp}", "created_at" => $timestamp);
@@ -120,8 +130,9 @@ class DefaultController extends Controller
       file_put_contents("/tmp/{$udid}/log.json", $logJson);
       file_put_contents("/tmp/{$udid}/config.json", $payloadJson);
 
-
-      $response = new JsonResponse(array("status" => "success", "message" => "Import Configuration saved"), 200);
+      $response = new JsonResponse(
+        array("log" => array("status" => "success", "message" => "Import Configuration saved")),
+        200);
       return $response;
 
     }
