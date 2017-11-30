@@ -8,7 +8,6 @@ use Sensio\Bundle\FrameworkExtraBundle\Configuration\Route;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\Method;
 use Enqueue\Fs\FsConnectionFactory;
 use Symfony\Component\Filesystem\Exception\IOException;
-use Symfony\Component\Finder\Finder;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -58,6 +57,7 @@ class DefaultController extends Controller
        return $response;
      }
 
+
     /**
      * @Route("/import-configuration")
      * @Method("POST")
@@ -67,7 +67,7 @@ class DefaultController extends Controller
      *   method="POST",
      *   section="Import Configurations",
      *   parameters={
-     *   {"name"="payload", "dataType"="string", "format"="json", "required"=true, "description"="udid of the ImportConfiguration"}
+     *   {"name"="config", "dataType"="string", "format"="json", "required"=true, "description"="resource info and mapping data"}
      *   },
      *   statusCodes={
      *       200="success",
@@ -77,7 +77,7 @@ class DefaultController extends Controller
      */
     public function addImportConfigurationAction(Request $request)
     {
-      $payloadJson = $request->request->get('config');
+      $payloadJson = $request->getContent();
 
       if (!$payloadJson) {
         $response = new JsonResponse(
@@ -85,8 +85,6 @@ class DefaultController extends Controller
           400);
         return $response;
       }
-
-      $fs = $this->container->get('filesystem');
 
       $payload = json_decode($payloadJson);
       if (json_last_error() != JSON_ERROR_NONE) {
@@ -96,7 +94,7 @@ class DefaultController extends Controller
         return $response;
       }
 
-      if (!property_exists($payload, "id") && !property_exists($payload, "type") && !property_exists($payload, "config")) {
+      if (!property_exists($payload, "id") || !property_exists($payload, "type") || !property_exists($payload, "config")) {
         $response = new JsonResponse(
           array("log" => array("status" => "fail", "message" => "Missing keys")),
           400);
@@ -104,6 +102,7 @@ class DefaultController extends Controller
       }
 
       $udid = $payload->id;
+      $fs = $this->container->get('filesystem');
 
       if ($fs->exists("/tmp/{$udid}")) {
         $response = new JsonResponse(
@@ -124,69 +123,99 @@ class DefaultController extends Controller
 
       $date = new \DateTime('now');
       $timestamp = $date->format('Y-m-d H:i:s');
-      $log = array("status" => "New", "message" => "{$udid} created at {$timestamp}", "created_at" => $timestamp);
+      $log = array("status" => "new", "message" => "{$udid} created at {$timestamp}", "created_at" => $timestamp);
 
       $logJson = json_encode($log);
       file_put_contents("/tmp/{$udid}/log.json", $logJson);
       file_put_contents("/tmp/{$udid}/config.json", $payloadJson);
 
       $response = new JsonResponse(
-        array("log" => array("status" => "success", "message" => "Import Configuration saved")),
+        array("log" => array("status" => "success", "message" => $log['message'], "flag" => $log['status'])),
         200);
       return $response;
 
     }
 
+
     /**
-     * @Route("/statusConfig")
+     * @Route("/import-configuration/{udid}")
      * @Method("GET")
      * @ApiDoc(
      *   description="Returns a status for an Import configuration",
      *   tags={"in-development"},
      *   method="GET",
+     *   requirements={
+     *    {
+     *      "name"="udid",
+     *      "dataType"="string",
+     *      "description"="udid of the resource"
+     *    }
+     *   },
      *   section="Import Configurations",
-     *   headers={ { "name"="Content-type", "required"=true, "description"="application/json"} },
      *   statusCodes={
      *       200="success",
      *       400="error",
      *       404="not found",
-     *   },
-     *   parameters={
-     *   {"name"="udid", "dataType"="string", "required"=true, "description"="udid of the ImportConfiguration"}
      *   }
+     *
      * )
      */
-    public function statusConfigurationAction(Request $request) {
-
-      $udid = $request->query->get("udid");
+    public function statusConfigurationAction($udid) {
 
       if (!$udid){
-        $response = new JsonResponse(array("status" => "fail", "message" => "udid parameters required"), 400);
+        $response = new JsonResponse(
+          array("log" => array("status" => "fail", "message" => "udid parameters required")),
+          400);
         return $response;
       }
 
       if (!file_exists("/tmp/{$udid}")) {
-        $response = new JsonResponse(array("status" => "fail", "message" => "no configuration with the id {$udid}"), 400);
+        $response = new JsonResponse(
+          array("log" => array("status" => "fail", "message" => "no configuration with the udid: {$udid}")),
+          404);
         return $response;
       }
 
       $logJson = file_get_contents("/tmp/{$udid}/log.json");
       $log = json_decode($logJson);
 
-      $response = new JsonResponse(array("status" => "success", "message" => $log->message, "configStatus" => $log->status), 200);
+      $response = new JsonResponse(
+        array("log" => array("status" => "success", "message" => $log->message, "flag" => $log->status)),
+        200);
       return $response;
 
     }
 
+  /**
+   * @Route("/import-configurations")
+   * @Method("GET")
+   * @ApiDoc(
+   *   description="Returns a list of Import configurations",
+   *   tags={"in-development"},
+   *   method="GET",
+   *   section="Import Configurations",
+   *   statusCodes={
+   *       200="success",
+   *       400="error",
+   *       404="not found",
+   *   }
+   *
+   * )
+   */
+  public function statusConfigurationsListAction() {
+
+    }
+
     /**
-     * @Route("/debugfs")
+     * @Route("/debug")
      */
-      public function debugFsAction() {
+      public function debugAction() {
 
-        $message = "-----";
+        $message = "folder /tmp/photos does not exist";
+
         $fs = $this->container->get('filesystem');
-
         //$fs->mkdir("/tmp/photos");
+
         if ($fs->exists("/tmp/photos")) {
           $message = "folder /tmp/photos exist";
         }
