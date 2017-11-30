@@ -3,7 +3,7 @@
     "type": "opendatastack/csv-importer",
     "config": {
         "uri": "http://demo.getdkan.com/sites/default/files/Bike_Lane.csv",
-        "model" {
+        "model": {
           "field one": "etc",
           "field two": "etc"
         }

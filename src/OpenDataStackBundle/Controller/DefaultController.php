@@ -7,6 +7,8 @@ use Symfony\Bundle\FrameworkBundle\Controller\Controller;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\Route;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\Method;
 use Enqueue\Fs\FsConnectionFactory;
+use Symfony\Component\Filesystem\Exception\IOException;
+use Symfony\Component\Finder\Finder;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -64,8 +66,9 @@ class DefaultController extends Controller
      *   description="Add a new Import to Elasticsearch-Importer",
      *   method="POST",
      *   section="Import Configurations",
-     *   input={},
-     *   output={},
+     *   parameters={
+     *   {"name"="payload", "dataType"="string", "format"="json", "required"=true, "description"="udid of the ImportConfiguration"}
+     *   },
      *   statusCodes={
      *       200="success",
      *       400="error",
@@ -74,13 +77,112 @@ class DefaultController extends Controller
      */
     public function addImportConfigurationAction(Request $request)
     {
+      $payloadJson = $request->request->get('payload');
+
+      if (!$payloadJson) {
+        $response = new JsonResponse(array("status" => "fail", "message" => "empty payload"), 400);
+        return $response;
+      }
+
+      $fs = $this->container->get('filesystem');
+
+      $payload = json_decode($payloadJson);
+      if (json_last_error() != JSON_ERROR_NONE) {
+        $response = new JsonResponse(array("status" => "fail", "message" => json_last_error_msg()), 400);
+        return $response;
+      }
+
+      if (!property_exists($payload, "id") && !property_exists($payload, "type") && !property_exists($payload, "config")) {
+        $response = new JsonResponse(array("status" => "fail", "message" => "missing keys"), 400);
+        return $response;
+      }
+
+      $udid = $payload->id;
+
+      if ($fs->exists("/tmp/{$udid}")) {
+        $response = new JsonResponse(array("status" => "fail", "message" => "Exist already"), 400);
+        return $response;
+      }
+
+      try {
+        $fs->mkdir("/tmp/{$udid}");
+      } catch (IOException $exception) {
+        $response = new JsonResponse(array("status" => "fail", "message" => "Folder creation error"), 400);
+        return $response;
+      }
+
+      //$payload
+      $date = new \DateTime('now');
+      $timestamp = $date->format('Y-m-d H:i:s');
+      $log = array("status" => "New", "message" => "{$udid} created at {$timestamp}", "created_at" => $timestamp);
+
+      $logJson = json_encode($log);
+      file_put_contents("/tmp/{$udid}/log.json", $logJson);
+      file_put_contents("/tmp/{$udid}/config.json", $payloadJson);
 
 
-      $val = "no";
-      $response = new JsonResponse(array("test" => $val), 200);
-
+      $response = new JsonResponse(array("status" => "success", "message" => "Import Configuration saved"), 200);
       return $response;
+
     }
 
+    /**
+     * @Route("/statusConfig")
+     * @Method("GET")
+     * @ApiDoc(
+     *   description="Returns a status for an Import configuration",
+     *   tags={"in-development"},
+     *   method="GET",
+     *   section="Import Configurations",
+     *   headers={ { "name"="Content-type", "required"=true, "description"="application/json"} },
+     *   statusCodes={
+     *       200="success",
+     *       400="error",
+     *       404="not found",
+     *   },
+     *   parameters={
+     *   {"name"="udid", "dataType"="string", "required"=true, "description"="udid of the ImportConfiguration"}
+     *   }
+     * )
+     */
+    public function statusConfigurationAction(Request $request) {
+
+      $udid = $request->query->get("udid");
+
+      if (!$udid){
+        $response = new JsonResponse(array("status" => "fail", "message" => "udid parameters required"), 400);
+        return $response;
+      }
+
+      if (!file_exists("/tmp/{$udid}")) {
+        $response = new JsonResponse(array("status" => "fail", "message" => "no configuration with the id {$udid}"), 400);
+        return $response;
+      }
+
+      $logJson = file_get_contents("/tmp/{$udid}/log.json");
+      $log = json_decode($logJson);
+
+      $response = new JsonResponse(array("status" => "success", "message" => $log->message, "configStatus" => $log->status), 200);
+      return $response;
+
+    }
+
+    /**
+     * @Route("/debugfs")
+     */
+      public function debugFsAction() {
+
+        $message = "-----";
+        $fs = $this->container->get('filesystem');
+
+        //$fs->mkdir("/tmp/photos");
+        if ($fs->exists("/tmp/photos")) {
+          $message = "folder /tmp/photos exist";
+        }
+
+        return $this->render('OpenDataStackBundle:Default:debug.html.twig',
+          ['message' => $message]
+        );
+      }
          
 }
