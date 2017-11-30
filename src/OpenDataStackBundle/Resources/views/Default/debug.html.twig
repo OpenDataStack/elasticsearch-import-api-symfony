@@ -1,8 +1,11 @@
 {% extends "::base.html.twig" %}
 
 {% block body %}
-    Message: {{message}}
     <br/>
-
+    <ul>
+        {% for folder in message %}
+            <li>{{ folder }}</li>
+        {% endfor %}
+    </ul>
 {% endblock %}
 
