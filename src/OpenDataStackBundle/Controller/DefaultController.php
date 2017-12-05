@@ -157,6 +157,7 @@ class DefaultController extends Controller {
 
         $response = new JsonResponse(
             array(
+                'id' => $udid,
                 "log" => array(
                     "status" => "success",
                     "message" => $log['message'],
@@ -223,6 +224,7 @@ class DefaultController extends Controller {
 
         $response = new JsonResponse(
             array(
+                'id' => $udid,
                 "log" => array(
                     "status" => "success",
                     "message" => $log->message,
@@ -428,6 +430,7 @@ class DefaultController extends Controller {
 
         $response = new JsonResponse(
             array(
+                'id' => $udid,
                 "log" => array(
                     "status" => "success",
                     "message" => $log->message,
