@@ -24,6 +24,7 @@
         "php": ">=5.5.9",
         "doctrine/doctrine-bundle": "^1.6",
         "doctrine/orm": "^2.5",
+        "elasticsearch/elasticsearch": "^6.0",
         "enqueue/enqueue-bundle": "^0.8.9",
         "enqueue/fs": "^0.8.9",
         "enqueue/simple-client": "^0.8.9",
