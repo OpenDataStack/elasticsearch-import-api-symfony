@@ -1,11 +1,104 @@
 {
-    "id": "960687d8-582c-4f29-b1e4-113781e58e3b",
-    "type": "opendatastack/csv-importer",
-    "config": {
-        "uri": "http://demo.getdkan.com/sites/default/files/Bike_Lane.csv",
-        "model": {
-          "field one": "etc",
-          "field two": "etc"
+  "id": "11111111-582c-4f29-b1e4-113781e18e3b",
+  "type": "opendatastack/csv-importer",
+  "config": {
+    "mappings": {
+      "contract": {
+        "properties": {
+          "ocid": {
+            "type": "keyword"
+          },
+          "date": {
+            "type": "date",
+            "ignore_malformed": true
+          },
+          "tag": {
+            "type": "keyword"
+          },
+          "initiationType": {
+            "type": "keyword"
+          },
+          "publishedDate": {
+            "type": "date",
+            "ignore_malformed": true
+          },
+          "id": {
+            "type": "keyword"
+          },
+          "language": {
+            "type": "keyword"
+          },
+          "uri": {
+            "type": "keyword"
+          },
+          "procurement_type": {
+            "type": "keyword"
+          },
+          "buyer_name": {
+            "type": "text"
+          },
+          "buyer_identifier_scheme": {
+            "type": "keyword"
+          },
+          "buyer_identifier_id": {
+            "type": "keyword"
+          },
+          "buyer_address_countryName": {
+            "type": "keyword"
+          },
+          "buyer_address_region": {
+            "type": "keyword"
+          },
+          "buyer_address_locality": {
+            "type": "text"
+          },
+          "buyer_address_streetAddress": {
+            "type": "text"
+          },
+          "tender_id": {
+            "type": "keyword"
+          },
+          "tender_status": {
+            "type": "keyword"
+          },
+          "tender_description": {
+            "type": "text"
+          },
+          "tender_title": {
+            "type": "text"
+          },
+          "tender_value_currency": {
+            "type": "keyword"
+          },
+          "tender_value_amount": {
+            "type": "float",
+            "ignore_malformed": true
+          },
+          "tender_items_0_id": {
+            "type": "integer",
+            "ignore_malformed": true
+          },
+          "tender_items_0_classification_id": {
+            "type": "integer",
+            "ignore_malformed": true
+          },
+          "tender_items_0_classification_description": {
+            "type": "text"
+          },
+          "tender_items_0_classification_scheme": {
+            "type": "keyword"
+          },
+          "tender_items_0_classification_uri": {
+            "type": "keyword"
+          },
+          "tender_tenderPeriod_startDate": {
+            "type": "keyword"
+          },
+          "tender_tenderPeriod_endDate": {
+            "type": "keyword"
+          }
         }
+      }
     }
+  }
 }
