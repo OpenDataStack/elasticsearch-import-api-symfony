@@ -2,18 +2,20 @@
 
 namespace OpenDataStackBundle\Controller;
 
-use Nelmio\ApiDocBundle\Annotation\ApiDoc;
 use Symfony\Bundle\FrameworkBundle\Controller\Controller;
-use Sensio\Bundle\FrameworkExtraBundle\Configuration\Route;
-use Sensio\Bundle\FrameworkExtraBundle\Configuration\Method;
-use Enqueue\Fs\FsConnectionFactory;
-use Symfony\Component\Filesystem\Exception\IOException;
-use Symfony\Component\Finder\Finder;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
-use Goodby\CSV\Import\Standard\Lexer;
-use Goodby\CSV\Import\Standard\Interpreter;
-use Goodby\CSV\Import\Standard\LexerConfig;
+use Symfony\Component\Filesystem\Exception\IOException;
+use Symfony\Component\Finder\Finder;
+
+use Sensio\Bundle\FrameworkExtraBundle\Configuration\Route;
+use Sensio\Bundle\FrameworkExtraBundle\Configuration\Method;
+
+use Enqueue\Fs\FsConnectionFactory;
+use Nelmio\ApiDocBundle\Annotation\ApiDoc;
+
+use Elasticsearch\ClientBuilder;
+
 
 class DefaultController extends Controller {
 
@@ -26,9 +28,6 @@ class DefaultController extends Controller {
      *   description="Add a new Import to Elasticsearch-Importer",
      *   method="POST",
      *   section="Import Configurations",
-     *   parameters={
-     *   {"name"="config", "dataType"="string", "format"="json", "required"=true, "description"="resource info and mapping data"}
-     *   },
      *   statusCodes={
      *       200="success",
      *       400="error",
@@ -36,73 +35,34 @@ class DefaultController extends Controller {
      * )
      */
     public function addImportConfigurationAction(Request $request) {
+
         $payloadJson = $request->getContent();
 
-        if (!$payloadJson) {
-            $response = new JsonResponse(
-                array(
-                    "log" => array(
-                        "status" => "fail",
-                        "message" => "empty config parameters"
-                    )
-                ),
-                400);
-            return $response;
-        }
+        // 1. Request & Data Validation
+
+        if (!$payloadJson) return $this->logJsonResonse(400,"empty config parameters");
 
         $payload = json_decode($payloadJson);
-        if (json_last_error() != JSON_ERROR_NONE) {
-            $response = new JsonResponse(
-                array(
-                    "log" => array(
-                        "status" => "fail",
-                        "message" => json_last_error_msg()
-                    )
-                ),
-                400);
-            return $response;
-        }
 
-        if (!property_exists($payload, "id") || !property_exists($payload, "type") || !property_exists($payload, "config")) {
-            $response = new JsonResponse(
-                array(
-                    "log" => array(
-                        "status" => "fail",
-                        "message" => "Missing keys"
-                    )
-                ),
-                400);
-            return $response;
-        }
+        if (json_last_error() != JSON_ERROR_NONE)
+            return $this->logJsonResonse(400,json_last_error_msg());
+
+        if (array_diff(['id', 'type', 'config'], $payload))
+            return $this->logJsonResonse(400,"Missing keys");
+
 
         $udid = $payload->id;
         $fs = $this->container->get('filesystem');
 
-        if ($fs->exists("/tmp/configurations/{$udid}")) {
-            $response = new JsonResponse(
-                array(
-                    "log" => array(
-                        "status" => "fail",
-                        "message" => "Import configuration exist already"
-                    )
-                ),
-                400);
-            return $response;
-        }
+        if ($fs->exists("/tmp/configurations/{$udid}"))
+            return $this->logJsonResonse(400,"Import configuration exist already");
 
-        // Persist import-configuration in the filesystem
+
+        // 2. Persist import-configuration in the filesystem
         try {
             $fs->mkdir("/tmp/configurations/{$udid}");
         } catch (IOException $exception) {
-            $response = new JsonResponse(
-                array(
-                    "log" => array(
-                        "status" => "fail",
-                        "message" => "Folder creation error"
-                    )
-                ),
-                400);
-            return $response;
+            return $this->logJsonResonse(400,"Folder creation error");
         }
 
         $date = new \DateTime('now');
@@ -117,17 +77,39 @@ class DefaultController extends Controller {
         file_put_contents("/tmp/configurations/{$udid}/log.json", $logJson);
         file_put_contents("/tmp/configurations/{$udid}/config.json", $payloadJson);
 
-        $response = new JsonResponse(
-            array(
-                'id' => $udid,
-                "log" => array(
-                    "status" => "success",
-                    "message" => $log['message'],
-                    "flag" => $log['status']
-                )
-            ),
-            200);
-        return $response;
+        // 3. Add mapping template to Elasticsearch
+
+        // 3.1. init Elasticsearch client
+        $client = ClientBuilder::create()
+            ->setHosts([$this->container->getParameter('elasticsearch_host')])
+            ->setSSLVerification(FALSE)
+            ->build();
+
+        // 3.2. (re)Create Template mapping for indexes under this import configuration
+
+        $templateName = 'dkan-'. $udid;
+        $mappings = $payload->config->mappings;
+
+        if ($client->indices()->existsTemplate(['name' => $templateName])) {
+            $client->indices()->deleteTemplate(['name' => $templateName]);
+        }
+
+        $elasticsearch = $client->indices()->putTemplate(array (
+            'name' => $templateName,
+            'body' => array (
+                'index_patterns' => [$templateName.'-*'],
+                'settings' => ['number_of_shards' => 1],
+                'mappings' => $mappings
+            )
+        ));
+
+
+        // 4. Respond successfully for import configuration added
+
+        return $this->logJsonResonse(200, $log['message'], array(
+            "flag" => $log['status'],
+            "elasticsearch" => $elasticsearch
+        ));
 
     }
 
@@ -327,7 +309,6 @@ class DefaultController extends Controller {
 
     }
 
-
     /**
      * request ImportConfiguration
      * @Route("/request-import")
@@ -374,7 +355,11 @@ class DefaultController extends Controller {
             return $response;
         }
 
-        if (!property_exists($payload, "id") || !property_exists($payload, "type") || !property_exists($payload, "url")) {
+        if (!property_exists($payload, "udid") ||
+            !property_exists($payload, "id")   ||
+            !property_exists($payload, "type") ||
+            !property_exists($payload, "url"))
+        {
             $response = new JsonResponse(
                 array(
                     "log" => array(
@@ -386,7 +371,7 @@ class DefaultController extends Controller {
             return $response;
         }
 
-        $udid = $payload->id;
+        $udid = $payload->udid;
 
         if (!file_exists("/tmp/configurations/{$udid}")) {
             $response = new JsonResponse(
@@ -406,7 +391,8 @@ class DefaultController extends Controller {
         $data = [
             'importer'  => $payload->type,
             'uri'       => $payload->url,
-            'udid'      => $payload->id
+            'udid'      => $payload->udid,
+            'id'        => $payload->id
         ];
         $queue = $context->createQueue('importQueue');
         $context->createProducer()->send(
@@ -415,7 +401,6 @@ class DefaultController extends Controller {
         );
 
 
-        //TODO:
         $logJson = file_get_contents("/tmp/configurations/{$udid}/log.json");
         $log = json_decode($logJson);
 
@@ -444,104 +429,25 @@ class DefaultController extends Controller {
 
     }
 
-//  ===================================================
-//  ===================================================
-//  ===================================================
-
     /**
-     * @Route("/test")
+     * A Json Response helpers
+     *
+     * @param $status 200:success , 40* for failed
+     * @param $message
+     * @param array|NULL $info
+     * @return \Symfony\Component\HttpFoundation\JsonResponse
      */
-    public function testAction() {
-        // TODO Shift to services
-        $connectionFactory = new FsConnectionFactory('/tmp/enqueue');
-        $context = $connectionFactory->createContext();
-
-        $data = [
-            'importer' => 'opendatastack/csv',
-            'uri' => 'https://datos.colombiacompra.gov.co/csvdata/2013/20136.csv'
-        ];
-        $queue = $context->createQueue('importQueue');
-        $context->createProducer()->send(
-            $queue,
-            $context->createMessage(json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES))
-        );
-
-        // Example of passing environment variables from docker
-        $elastic_server = "http://localhost:9200"; //$this->getParameter('elastic_server_host');
-        return $this->render('OpenDataStackBundle:Default:index.html.twig',
-            [
-                'message' => 'Hello there',
-                'elastic_server' => $elastic_server,
-            ]
-        );
-    }
-
-    /**
-     * CSV import test action
-     * @Route("/csvimport")
-     */
-    public function csvImportAction() {
-
-        $lexer = new Lexer(new LexerConfig());
-        $interpreter = new Interpreter();
-        $interpreter->addObserver(function(array $row) {
-
-
-        });
-
-        $lexer->parse('data.csv', $interpreter);
-
-    }
-
-
-    /**
-     * @Route("/ping")
-     * @Method("POST")
-     */
-    public function pingAction(Request $request) {
-
-        $data = $request->request->get('data', 'response ok : send a message in a data key');
-
-        $response = new JsonResponse($data, 200);
-
+    private function logJsonResonse($status, $message, array $info = null)
+    {
+        $response = new JsonResponse(
+            array(
+                "log" => array(
+                    "status" => ($status == 200 ? "success":"fail"),
+                    "message" => $message,
+                    "info" => $info
+                )
+            ),
+            $status);
         return $response;
     }
-
-
-    /**
-     * @Route("/debug")
-     */
-    public function debugAction() {
-
-        $finder = new Finder();
-        $folders = $finder->directories()->in("/tmp/configurations");
-
-        $b = NULL;
-        foreach ($folders as $f) {
-            $b[] = basename($f);
-        }
-
-        return $this->render('OpenDataStackBundle:Default:debug.html.twig',
-            ['message' => $b]
-        );
-    }
-
-    /**
-     * @Route("/request")
-     */
-    public function requestImportAction(Request $request) {
-
-        $jsonData = $request->request->get('param');
-
-        // $datasetId
-        // $urlPath
-
-        // add message to the queue
-
-
-        return $this->render('OpenDataStackBundle:Default:debug.html.twig',
-            ['message' => "ee"]
-        );
-    }
-
 }
