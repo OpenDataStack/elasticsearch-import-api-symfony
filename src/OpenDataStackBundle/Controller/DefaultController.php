@@ -139,44 +139,18 @@ class DefaultController extends Controller {
      */
     public function statusConfigurationAction($udid) {
 
-        if (!$udid) {
-            $response = new JsonResponse(
-                array(
-                    "log" => array(
-                        "status" => "fail",
-                        "message" => "udid parameters required"
-                    )
-                ),
-                400);
-            return $response;
-        }
+        // validate UDID exist
+        if (!$udid)
+            return $this->logJsonResonse(400,"udid parameters required");
 
-        if (!file_exists("/tmp/configurations/{$udid}")) {
-            $response = new JsonResponse(
-                array(
-                    "log" => array(
-                        "status" => "fail",
-                        "message" => "no configuration with the udid: {$udid}"
-                    )
-                ),
-                404);
-            return $response;
-        }
+        if (!file_exists("/tmp/configurations/{$udid}"))
+            return $this->logJsonResonse(404,"no configuration with the udid: {$udid}");
 
+        // parse log file and return the persisted status
         $logJson = file_get_contents("/tmp/configurations/{$udid}/log.json");
         $log = json_decode($logJson);
 
-        $response = new JsonResponse(
-            array(
-                'id' => $udid,
-                "log" => array(
-                    "status" => "success",
-                    "message" => $log->message,
-                    "flag" => $log->status
-                )
-            ),
-            200);
-        return $response;
+        return $this->logJsonResonse(200, $log->message, ["flag" => $log->status]);
 
     }
 
@@ -199,31 +173,28 @@ class DefaultController extends Controller {
      */
     public function statusConfigurationsListAction() {
 
+        // Get list of folders for the import configurations
         $finder = new Finder();
         $folders = $finder->directories()->in("/tmp/configurations");
 
-        $listImportConfigurations = NULL;
+        $listImportConfigurations = [];
         foreach ($folders as $folder) {
             $listImportConfigurations[] = basename($folder);
         }
 
-        if (!$listImportConfigurations) {
-            $response = new JsonResponse(
-                array(
-                    "ids" => array()
-                ),
-                404);
+        // Response with list of saved import configurations
+        $status = 0;
+        $message = "";
+        if ($listImportConfigurations) {
+            $status = 200;
+            $message = vsprintf("%d import configurations found", count($listImportConfigurations));
+        } else {
+            $status = 404;
+            $message = "No result";
 
-            return $response;
         }
-
-        $response = new JsonResponse(
-            array(
-                "ids" => $listImportConfigurations
-            ),
-            200);
-
-        return $response;
+        $status = ($listImportConfigurations) ? 200 : 404;
+        return $this->logJsonResonse($status, $message, ["ids" => $listImportConfigurations]);
 
     }
 
@@ -253,31 +224,13 @@ class DefaultController extends Controller {
      */
     public function deleteConfigurationAction($udid) {
 
-        if (!$udid) {
-            $response = new JsonResponse(
-                array(
-                    "log" => array(
-                        "status" => "fail",
-                        "message" => "udid parameters required"
-                    )
-                ),
-                400);
-            return $response;
-        }
+        // validate UDID exist
+        if (!$udid) return $this->logJsonResonse(400, "udid parameters required");
 
-        if (!file_exists("/tmp/configurations/{$udid}")) {
-            $response = new JsonResponse(
-                array(
-                    "log" => array(
-                        "status" => "fail",
-                        "message" => "no configuration with the udid: {$udid}"
-                    )
-                ),
-                404);
-            return $response;
-        }
+        if (!file_exists("/tmp/configurations/{$udid}")) return $this->logJsonResonse(404, "no configuration with the udid: {$udid}");
 
-        // remove the folder
+
+        // Remove the import configurations folder
         $fs = $this->container->get('filesystem');
 
         try {
@@ -286,26 +239,12 @@ class DefaultController extends Controller {
 
         } catch (IOException $exception) {
 
-            $response = new JsonResponse(
-                array(
-                    "log" => array(
-                        "status" => "fail",
-                        "message" => "IOException on delete {$udid}",
-                    )
-                ),
-                400);
-            return $response;
+            return $this->logJsonResonse(400, "IOException on delete {$udid}");
+
         }
 
-        $response = new JsonResponse(
-            array(
-                "log" => array(
-                    "status" => "success",
-                    "message" => "{$udid} deleted",
-                )
-            ),
-            200);
-        return $response;
+        return $this->logJsonResonse(200, "{$udid} deleted");
+
 
     }
 
@@ -328,62 +267,28 @@ class DefaultController extends Controller {
      */
     public function requestImportConfigurationAction(Request $request) {
 
+        // 1. Validate json payload content
+
         $payloadJson = $request->getContent();
 
-        if (!$payloadJson) {
-            $response = new JsonResponse(
-                array(
-                    "log" => array(
-                        "status" => "fail",
-                        "message" => "empty config parameters"
-                    )
-                ),
-                400);
-            return $response;
-        }
+        if (!$payloadJson) return $this->logJsonResonse(400, "empty config parameters");
 
         $payload = json_decode($payloadJson);
-        if (json_last_error() != JSON_ERROR_NONE) {
-            $response = new JsonResponse(
-                array(
-                    "log" => array(
-                        "status" => "fail",
-                        "message" => json_last_error_msg()
-                    )
-                ),
-                400);
-            return $response;
-        }
 
-        if (!property_exists($payload, "udid") ||
-            !property_exists($payload, "id")   ||
-            !property_exists($payload, "type") ||
-            !property_exists($payload, "url"))
-        {
-            $response = new JsonResponse(
-                array(
-                    "log" => array(
-                        "status" => "fail",
-                        "message" => "Missing keys"
-                    )
-                ),
-                400);
-            return $response;
+        if (json_last_error() != JSON_ERROR_NONE) return $this->logJsonResonse(400, json_last_error_msg());
+
+
+        if (array_diff(['id', 'udid', 'type', 'url'], $payload)) {
+            return $this->logJsonResonse(400, "Missing keys");
         }
 
         $udid = $payload->udid;
 
-        if (!file_exists("/tmp/configurations/{$udid}")) {
-            $response = new JsonResponse(
-                array(
-                    "log" => array(
-                        "status" => "fail",
-                        "message" => "no configuration with the udid: {$udid}"
-                    )
-                ),
-                404);
-            return $response;
-        }
+        if (!file_exists("/tmp/configurations/{$udid}"))
+            return $this->logJsonResonse(404, "no configuration with the udid: {$udid}");
+
+
+        // 2. Produce a message to process in the queue
 
         $connectionFactory = new FsConnectionFactory('/tmp/enqueue');
         $context = $connectionFactory->createContext();
@@ -400,32 +305,8 @@ class DefaultController extends Controller {
             $context->createMessage(json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES))
         );
 
-
-        $logJson = file_get_contents("/tmp/configurations/{$udid}/log.json");
-        $log = json_decode($logJson);
-
-        $log->status = "queued";
-        $log->message = "queued";
-
-        $logJson = json_encode($log);
-        file_put_contents("/tmp/configurations/{$udid}/log.json", $logJson);
-
-        // read value from file to ensure that the status is persisted
-        $logJson = file_get_contents("/tmp/configurations/{$udid}/log.json");
-        $log = json_decode($logJson);
-
-        $response = new JsonResponse(
-            array(
-                'id' => $udid,
-                "log" => array(
-                    "status" => "success",
-                    "message" => $log->message,
-                    "flag" => $log->status
-                )
-            ),
-            200);
-
-        return $response;
+        
+        return $this->logJsonResonse(200, "Import configuration {$udid} is pending to be processed");
 
     }
 
