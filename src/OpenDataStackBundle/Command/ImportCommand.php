@@ -3,24 +3,21 @@
 namespace OpenDataStackBundle\Command;
 
 use Elasticsearch\ClientBuilder;
+use Enqueue\Consumption\QueueConsumer;
+use Enqueue\Fs\FsConnectionFactory;
+use Interop\Queue\PsrMessage;
+
+use Interop\Queue\PsrProcessor;
+use League\Csv\Reader;
 use Symfony\Bundle\FrameworkBundle\Command\ContainerAwareCommand;
-use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
-use Symfony\Component\Console\Input\InputOption;
+
 use Symfony\Component\Console\Output\OutputInterface;
 
-use Interop\Queue\PsrMessage;
-use Interop\Queue\PsrProcessor;
-use Enqueue\Fs\FsConnectionFactory;
-use Enqueue\Consumption\QueueConsumer;
-
-use Monolog\Logger;
-
-use League\Csv\Reader;
-
-
-class ImportCommand extends ContainerAwareCommand {
-    protected function configure() {
+class ImportCommand extends ContainerAwareCommand
+{
+    protected function configure()
+    {
         $this
             ->setName('ods:import')
             ->setDescription('Process the import file queue');
@@ -30,7 +27,8 @@ class ImportCommand extends ContainerAwareCommand {
      * Handle requests to import dkan resources and prepare them for indexing
      *
      */
-    protected function execute(InputInterface $input, OutputInterface $output) {
+    protected function execute(InputInterface $input, OutputInterface $output)
+    {
         $output->writeln("Listening for the Queue: --importQueue--");
 
         // Initialise a Queue consumer
@@ -46,14 +44,12 @@ class ImportCommand extends ContainerAwareCommand {
             ->setSSLVerification(false)
             ->build();
 
-
         // anonymous block function to handle incoming requests
         $queueConsumer->bind('importQueue', function (PsrMessage $message) use (&$output, $client) {
-
             $output->writeln("Processing Job Import");
 
             // Parse payload from the REST call
-            $data = json_decode($message->getBody(), TRUE);
+            $data = json_decode($message->getBody(), true);
             $udid = $data['udid'];
             $resourceId = $data['id'];
             $output->writeln("Import Type: " . $data['importer']);
@@ -75,7 +71,7 @@ class ImportCommand extends ContainerAwareCommand {
             $records = $csv->getRecords(); //returns all the CSV records as an Iterator object
 
             // 3. Clear & Recreate index
-            $indexName = 'dkan-'.$udid.'-'.$resourceId;
+            $indexName = 'dkan-' . $udid . '-' . $resourceId;
             if ($client->indices()->exists(['index' => $indexName])) {
                 $client->indices()->delete(['index' => $indexName]);
             }
@@ -107,10 +103,8 @@ class ImportCommand extends ContainerAwareCommand {
             }
 
             return PsrProcessor::ACK;
-
         });
 
         $queueConsumer->consume();
     }
-
 }

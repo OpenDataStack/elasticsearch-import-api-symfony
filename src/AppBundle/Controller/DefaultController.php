@@ -17,14 +17,14 @@ class DefaultController extends Controller
         return $this->redirectToRoute("nelmio_api_doc_index");
     }
 
-  /**
-   * @Route("/symfony", name="symfony")
-   */
+    /**
+     * @Route("/symfony", name="symfony")
+     */
     public function symfonyAction()
     {
         // replace this example code with whatever you need
         return $this->render('default/index.html.twig', [
-            'base_dir' => realpath($this->getParameter('kernel.project_dir')).DIRECTORY_SEPARATOR,
+            'base_dir' => realpath($this->getParameter('kernel.project_dir')) . DIRECTORY_SEPARATOR,
         ]);
     }
 }
