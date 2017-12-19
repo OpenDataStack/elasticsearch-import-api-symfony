@@ -1,15 +1,15 @@
-#Summary
+# Summary
 
 A Symfony application designed to handle dataset resources import and index to elasticsearch. The application
 have a REST Api endpoint and a message queue based on filesystem. 
 
-##How it works
+## How it works
 
 For each dataset, a new folder is created holding the data schema and the status log. 
 When a request to import is made to the API, a resource uri is add to the queue in order to be fetched, parsed and indexed to elasticsearch
 
 
-##Usage
+## Usage
 The homepage of the project shows the API documentation made by Nelmio bundle. 
 You can see the Rest api methods and a useful sandbox foreach method to test it
 
@@ -32,7 +32,7 @@ and open the url : [localhost:8000](http://localhost:8000)
 - **Import Processing**
   - [POST] import-request
 
-##Development & Test Cycle
+## Development & Test Cycle
 
 #### Add an import configuration to register an entrypoint for any resources
 
@@ -64,7 +64,7 @@ POST /request-import
 }
 ```
 
-##Coding Standards
+## Coding Standards
 The project is in compliance to PSR-1 and PSR-2 for code style , and PSR-4 for autoloading
 
 To apply the php standards for your code, add the php-cs-fixer utility :
