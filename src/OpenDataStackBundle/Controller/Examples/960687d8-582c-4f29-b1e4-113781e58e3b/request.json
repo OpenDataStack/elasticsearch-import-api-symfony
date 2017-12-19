@@ -1,5 +1,6 @@
 {
-  "id": "11111111-582c-4f29-b1e4-113781e18e3b",
+  "udid": "123-dataset-123",
+  "id": "resource-abc",
   "type": "opendatastack/csv-importer",
-  "url": "https://datos.colombiacompra.gov.co/csvdata/2013/20135.csv"
+  "url": "https://cdn.rawgit.com/achoura/elkd/aa0074ac/model_slug.csv"
 }

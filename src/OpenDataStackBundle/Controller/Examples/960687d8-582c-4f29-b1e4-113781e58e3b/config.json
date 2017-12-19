@@ -1,5 +1,5 @@
 {
-  "id": "11111111-582c-4f29-b1e4-113781e18e3b",
+  "id": "123-dataset-123",
   "type": "opendatastack/csv-importer",
   "config": {
     "mappings": {

@@ -2,107 +2,137 @@
 
 namespace OpenDataStackBundle\Command;
 
+use Elasticsearch\ClientBuilder;
+use Enqueue\Consumption\QueueConsumer;
+use Enqueue\Fs\FsConnectionFactory;
+use Interop\Queue\PsrMessage;
+
+use Interop\Queue\PsrProcessor;
+use League\Csv\Reader;
 use Symfony\Bundle\FrameworkBundle\Command\ContainerAwareCommand;
-use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
-use Symfony\Component\Console\Input\InputOption;
+
 use Symfony\Component\Console\Output\OutputInterface;
 
-use Interop\Queue\PsrMessage;
-use Interop\Queue\PsrProcessor;
-use Enqueue\Fs\FsConnectionFactory;
-use Enqueue\Consumption\QueueConsumer;
-
-use Goodby\CSV\Import\Standard\Lexer;
-use Goodby\CSV\Import\Standard\Interpreter;
-use Goodby\CSV\Import\Standard\LexerConfig;
-
-
-class ImportCommand extends ContainerAwareCommand {
-    protected function configure() {
+class ImportCommand extends ContainerAwareCommand
+{
+    protected function configure()
+    {
         $this
             ->setName('ods:import')
             ->setDescription('Process the import file queue');
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output) {
+    /**
+     * Handle requests to import dkan resources and prepare them for indexing
+     *
+     */
+    protected function execute(InputInterface $input, OutputInterface $output)
+    {
         $output->writeln("Listening for the Queue: --importQueue--");
 
-        // TODO: Shift to services
+        // Initialise a Queue consumer
         $connectionFactory = new FsConnectionFactory('/tmp/enqueue');
         $context = $connectionFactory->createContext();
         $importQueue = $context->createQueue('importQueue');
         $queueConsumer = new QueueConsumer($context);
 
-        $queueConsumer->bind('importQueue', function (PsrMessage $message) use (&$output) {
-            // update log file
+        // Initialise Elasticsearch PHP Client
+        $client = ClientBuilder::create()
+            ->setHosts(['http://elasticsearch:9200'])
+            ->setLogger(ClientBuilder::defaultLogger('/tmp/importer.log'))
+            ->setSSLVerification(false)
+            ->build();
+
+        // Anonymous block function to handle incoming requests
+        $queueConsumer->bind('importQueue', function (PsrMessage $message) use (&$output, $client) {
             $output->writeln("Processing Job Import");
 
-            $data = json_decode($message->getBody(), TRUE);
+            // Parse payload from the REST call
+            $data = json_decode($message->getBody(), true);
+            $udid = $data['udid'];
+            $resourceId = $data['id'];
+
+            $configJson = file_get_contents("/tmp/configurations/{$udid}/config.json");
+            $config = json_decode($configJson, true);
+
+            $mapping = $config['config']['mappings'];
+            reset($mapping);
+            $indexType = key($mapping);
+
             $output->writeln("Import Type: " . $data['importer']);
             $output->writeln("URI: " . $data['uri']);
 
-
-            $uniqueFileName = vsprintf("resource_%s.csv", uniqid());
+            // Update import config status to : ** importing **
+            $logJson = file_get_contents("/tmp/configurations/{$udid}/log.json");
+            $log = json_decode($logJson);
+            $log->status = "importing";
+            $logJson = json_encode($log);
+            file_put_contents("/tmp/configurations/{$udid}/log.json", $logJson);
 
             // 1. Download CSV Resource
-            $filePath = "/tmp/configurations/" . $data['udid'] . "/". $uniqueFileName;
+            $uniqueFileName = vsprintf("resource_%s.csv", uniqid());
+            $filePath = "/tmp/configurations/" . $data['udid'] . "/" . $uniqueFileName;
             $uri = $data['uri'];
-            $this->downloadFile($uri, $filePath);
 
-            $output->writeln("File downloaded successfully");
+            // if the download fails , update log status to **error** and remove the message from the queue
+            if (!file_put_contents($filePath, fopen($uri, 'r'))) {
+                $log->status = "error";
+                $logJson = json_encode($log);
+                file_put_contents("/tmp/configurations/{$udid}/log.json", $logJson);
+
+                return PsrProcessor::REJECT;
+            }
+
+            $output->writeln("Resource for dataset({$udid}) downloaded successfully");
 
             // 2. Parse CSV Resource
+            $csv = Reader::createFromPath($filePath, 'r');
+            $csv->setHeaderOffset(0);
 
-            $lexer = new Lexer(new LexerConfig());
-            $interpreter = new Interpreter();
+            $header = $csv->getHeader(); //returns the CSV header record
+            $records = $csv->getRecords(); //returns all the CSV records as an Iterator object
 
-            $lineNumber = 0;
-            $interpreter->addObserver(function(array $row) use (&$lineNumber) {
-                $lineNumber += 1;
-                print_r($row);
+            // 3. Clear & Recreate index
+            $indexName = 'dkan-' . $udid . '-' . $resourceId;
+            if ($client->indices()->exists(['index' => $indexName])) {
+                $client->indices()->delete(['index' => $indexName]);
+            }
+            $response = $client->indices()->create(['index' => $indexName]);
 
-                //TODO: push to elastic when reach batch-size
-            });
+            // 4. Batch index 1000 records at a time
+            foreach ($records as $key => $rowFields) {
+                $params['body'][] = [
+                    'index' => [
+                        '_index' => $indexName,
+                        '_type' => $indexType
+                    ]
+                ];
 
-            $lexer->parse($filePath, $interpreter);
+                $params['body'][] = $rowFields;
 
-            $output->writeln("*****************************");
-            $output->writeln("File parsed");
+                // Every 1000 documents stop and send the bulk request
+                if ($key % 1000 == 0) {
+                    $response = $client->bulk($params);
+                    $params = ['body' => []];
+                }
+            }
 
+            // Send the last batch
+            if (!empty($params['body'])) {
+                $response = $client->bulk($params);
+            }
 
-            // update log file
-            // catch any exceptions and update log file with error
+            // 5. Update import config status to : ** importing **
+            $logJson = file_get_contents("/tmp/configurations/{$udid}/log.json");
+            $log = json_decode($logJson);
+            $log->status = "done";
+            $logJson = json_encode($log);
+            file_put_contents("/tmp/configurations/{$udid}/log.json", $logJson);
+
             return PsrProcessor::ACK;
         });
 
         $queueConsumer->consume();
-    }
-
-    // helpers
-    private function downloadFile($url, $path) {
-        $newfname = $path;
-
-        $opts=array(
-            "ssl"=>array(
-                "verify_peer"=>false,
-                "verify_peer_name"=>false,
-            ),
-        );
-        $file = fopen($url, 'rb', false, stream_context_create($opts));
-        if ($file) {
-            $newf = fopen($newfname, 'wb');
-            if ($newf) {
-                while (!feof($file)) {
-                    fwrite($newf, fread($file, 1024 * 8), 1024 * 8);
-                }
-            }
-        }
-        if ($file) {
-            fclose($file);
-        }
-        if ($newf) {
-            fclose($newf);
-        }
     }
 }
