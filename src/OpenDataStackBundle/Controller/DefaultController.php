@@ -50,7 +50,7 @@ class DefaultController extends Controller
             return $this->logJsonResonse(400, json_last_error_msg());
         }
 
-        if (array_diff(['id', 'type', 'config'], $payload)) {
+        if (!property_exists($payload, "id") || !property_exists($payload, "type") || !property_exists($payload, "config")) {
             return $this->logJsonResonse(400, "Missing keys");
         }
 
@@ -282,7 +282,8 @@ class DefaultController extends Controller
             return $this->logJsonResonse(400, json_last_error_msg());
         }
 
-        if (array_diff(['id', 'udid', 'type', 'url'], $payload)) {
+        if (!property_exists($payload, "id") || !property_exists($payload, "type")
+            || !property_exists($payload, "url") || !property_exists($payload, "udid")) {
             return $this->logJsonResonse(400, "Missing keys");
         }
 
@@ -308,6 +309,13 @@ class DefaultController extends Controller
             $queue,
             $context->createMessage(json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES))
         );
+
+        // 3. Update import config status to : ** queued **
+        $logJson = file_get_contents("/tmp/configurations/{$udid}/log.json");
+        $log = json_decode($logJson);
+        $log->status = "queued";
+        $logJson = json_encode($log);
+        file_put_contents("/tmp/configurations/{$udid}/log.json", $logJson);
 
         return $this->logJsonResonse(200, "Import configuration {$udid} is pending to be processed");
     }

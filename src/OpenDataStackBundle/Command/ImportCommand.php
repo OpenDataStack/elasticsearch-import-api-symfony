@@ -44,7 +44,7 @@ class ImportCommand extends ContainerAwareCommand
             ->setSSLVerification(false)
             ->build();
 
-        // anonymous block function to handle incoming requests
+        // Anonymous block function to handle incoming requests
         $queueConsumer->bind('importQueue', function (PsrMessage $message) use (&$output, $client) {
             $output->writeln("Processing Job Import");
 
@@ -52,15 +52,38 @@ class ImportCommand extends ContainerAwareCommand
             $data = json_decode($message->getBody(), true);
             $udid = $data['udid'];
             $resourceId = $data['id'];
+
+            $configJson = file_get_contents("/tmp/configurations/{$udid}/config.json");
+            $config = json_decode($configJson, true);
+
+            $mapping = $config['config']['mappings'];
+            reset($mapping);
+            $indexType = key($mapping);
+
             $output->writeln("Import Type: " . $data['importer']);
             $output->writeln("URI: " . $data['uri']);
+
+            // Update import config status to : ** importing **
+            $logJson = file_get_contents("/tmp/configurations/{$udid}/log.json");
+            $log = json_decode($logJson);
+            $log->status = "importing";
+            $logJson = json_encode($log);
+            file_put_contents("/tmp/configurations/{$udid}/log.json", $logJson);
 
             // 1. Download CSV Resource
             $uniqueFileName = vsprintf("resource_%s.csv", uniqid());
             $filePath = "/tmp/configurations/" . $data['udid'] . "/" . $uniqueFileName;
             $uri = $data['uri'];
 
-            file_put_contents($filePath, fopen($uri, 'r'));
+            // if the download fails , update log status to **error** and remove the message from the queue
+            if (!file_put_contents($filePath, fopen($uri, 'r'))) {
+                $log->status = "error";
+                $logJson = json_encode($log);
+                file_put_contents("/tmp/configurations/{$udid}/log.json", $logJson);
+
+                return PsrProcessor::REJECT;
+            }
+
             $output->writeln("Resource for dataset({$udid}) downloaded successfully");
 
             // 2. Parse CSV Resource
@@ -82,16 +105,15 @@ class ImportCommand extends ContainerAwareCommand
                 $params['body'][] = [
                     'index' => [
                         '_index' => $indexName,
-                        '_type' => 'contract'
+                        '_type' => $indexType
                     ]
                 ];
+
                 $params['body'][] = $rowFields;
 
                 // Every 1000 documents stop and send the bulk request
                 if ($key % 1000 == 0) {
                     $response = $client->bulk($params);
-                    print_r($response);
-
                     $params = ['body' => []];
                 }
             }
@@ -99,8 +121,14 @@ class ImportCommand extends ContainerAwareCommand
             // Send the last batch
             if (!empty($params['body'])) {
                 $response = $client->bulk($params);
-                print_r($response);
             }
+
+            // 5. Update import config status to : ** importing **
+            $logJson = file_get_contents("/tmp/configurations/{$udid}/log.json");
+            $log = json_decode($logJson);
+            $log->status = "done";
+            $logJson = json_encode($log);
+            file_put_contents("/tmp/configurations/{$udid}/log.json", $logJson);
 
             return PsrProcessor::ACK;
         });
