@@ -65,23 +65,11 @@ class DefaultController extends Controller
         try {
             $fs->mkdir("/tmp/configurations/{$udid}");
         } catch (IOException $exception) {
-            return $this->logJsonResonse(400, "Folder creation error");
+            return $this->logJsonResonse(400, $exception->getMessage());
         }
 
-        $date = new \DateTime('now');
-        $timestamp = $date->format('Y-m-d H:i:s');
-        $log = [
-            "status" => "new",
-            "message" => "dataset {$udid} created at {$timestamp}",
-            "created_at" => $timestamp
-        ];
-
-        $logJson = json_encode($log);
-        file_put_contents("/tmp/configurations/{$udid}/log.json", $logJson);
-        file_put_contents("/tmp/configurations/{$udid}/config.json", $payloadJson);
 
         // 3. Add mapping template to Elasticsearch
-
         // 3.1. init Elasticsearch client
         $client = ClientBuilder::create()
             ->setHosts([$this->container->getParameter('elastic_server_host')])
@@ -106,12 +94,23 @@ class DefaultController extends Controller
             ]
         ]);
 
-        // 4. Respond successfully for import configuration added
-
-        return $this->logJsonResonse(200, $log['message'], [
-            "flag" => $log['status'],
+        // Persist response to log file
+        $date = new \DateTime('now');
+        $timestamp = $date->format('Y-m-d H:i:s');
+        $log = [
+            "message" => "dataset {$udid} created at {$timestamp}",
+            "created_at" => $timestamp,
             "elasticsearch" => $elasticsearch
-        ]);
+        ];
+
+        $logJson = json_encode($log);
+        file_put_contents("/tmp/configurations/{$udid}/log.json", $logJson);
+        file_put_contents("/tmp/configurations/{$udid}/config.json", $payloadJson);
+
+        //TODO: call kibana to create an index pattern with 'Kibana Rest Api'
+
+        // 4. Respond successfully for import configuration added
+        return $this->logJsonResonse(200, $log['message']);
     }
 
 
@@ -353,12 +352,27 @@ class DefaultController extends Controller
         }
 
         $udid = $payload->udid;
+        $resourceId = $payload->id;
 
         if (!file_exists("/tmp/configurations/{$udid}")) {
             return $this->logJsonResonse(404, "no configuration with the udid: {$udid}");
         }
 
-        // 2. Produce a message to process in the queue
+        // 2. Update import config status to : ** queued **
+
+        $date = new \DateTime('now');
+        $timestamp = $date->format('Y-m-d H:i:s');
+        $log = [
+            "message" => "resource {$resourceId} created at {$timestamp}",
+            "created_at" => $timestamp,
+            "status" => "queued"
+        ];
+
+        $logJson = json_encode($log);
+        file_put_contents("/tmp/configurations/{$udid}/{$resourceId}/log.json", $logJson);
+
+
+        // 3. Produce a message to process in the queue
 
         $connectionFactory = new FsConnectionFactory('/tmp/enqueue');
         $context = $connectionFactory->createContext();
@@ -375,14 +389,7 @@ class DefaultController extends Controller
             $context->createMessage(json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES))
         );
 
-        // 3. Update import config status to : ** queued **
-        $logJson = file_get_contents("/tmp/configurations/{$udid}/log.json");
-        $log = json_decode($logJson);
-        $log->status = "queued";
-        $logJson = json_encode($log);
-        file_put_contents("/tmp/configurations/{$udid}/log.json", $logJson);
-
-        return $this->logJsonResonse(200, "Import configuration {$udid} is pending to be processed");
+        return $this->logJsonResonse(200, "Resource {$resourceId} for import configuration {$udid} is queued");
     }
 
     /**

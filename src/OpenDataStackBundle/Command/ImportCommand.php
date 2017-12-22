@@ -64,22 +64,22 @@ class ImportCommand extends ContainerAwareCommand
             $output->writeln("URI: " . $data['uri']);
 
             // Update import config status to : ** importing **
-            $logJson = file_get_contents("/tmp/configurations/{$udid}/log.json");
+            $logJson = file_get_contents("/tmp/configurations/{$udid}/{$resourceId}/log.json");
             $log = json_decode($logJson);
             $log->status = "importing";
             $logJson = json_encode($log);
-            file_put_contents("/tmp/configurations/{$udid}/log.json", $logJson);
+            file_put_contents("/tmp/configurations/{$udid}/{$resourceId}/log.json", $logJson);
 
             // 1. Download CSV Resource
             $uniqueFileName = vsprintf("resource_%s.csv", uniqid());
-            $filePath = "/tmp/configurations/" . $data['udid'] . "/" . $uniqueFileName;
+            $filePath = "/tmp/configurations/" . $udid . "/" . $resourceId . "/" . $uniqueFileName;
             $uri = $data['uri'];
 
             // if the download fails , update log status to **error** and remove the message from the queue
             if (!file_put_contents($filePath, fopen($uri, 'r'))) {
                 $log->status = "error";
                 $logJson = json_encode($log);
-                file_put_contents("/tmp/configurations/{$udid}/log.json", $logJson);
+                file_put_contents("/tmp/configurations/{$udid}/{$resourceId}/log.json", $logJson);
 
                 return PsrProcessor::REJECT;
             }
@@ -124,11 +124,11 @@ class ImportCommand extends ContainerAwareCommand
             }
 
             // 5. Update import config status to : ** importing **
-            $logJson = file_get_contents("/tmp/configurations/{$udid}/log.json");
+            $logJson = file_get_contents("/tmp/configurations/{$udid}/{$resourceId}/log.json");
             $log = json_decode($logJson);
             $log->status = "done";
             $logJson = json_encode($log);
-            file_put_contents("/tmp/configurations/{$udid}/log.json", $logJson);
+            file_put_contents("/tmp/configurations/{$udid}/{$resourceId}/log.json", $logJson);
 
             return PsrProcessor::ACK;
         });
