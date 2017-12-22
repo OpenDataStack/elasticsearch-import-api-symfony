@@ -183,6 +183,59 @@ class DefaultController extends Controller
         return $this->logJsonResonse(200, $log->message, ["flag" => $log->status]);
     }
 
+
+
+    /**
+     * status Configuration
+     * @Route("/import-configuration/{udid}/resources")
+     * @Method("GET")
+     * @ApiDoc(
+     *   description="Returns list resources for an Import configuration",
+     *   tags={"in-development"},
+     *   method="GET",
+     *   requirements={
+     *    {
+     *      "name"="udid",
+     *      "dataType"="string",
+     *      "description"="udid of the dataset"
+     *    }
+     *   },
+     *   section="Import Configurations",
+     *   statusCodes={
+     *       200="success",
+     *       400="error",
+     *       404="not found",
+     *   }
+     *
+     * )
+     */
+    public function statusResourcesListAction($udid)
+    {
+
+        // Get list of folders for the import configurations
+        $finder = new Finder();
+        $folders = $finder->directories()->in("/tmp/configurations/{$udid}");
+
+        $listResources = [];
+        foreach ($folders as $folder) {
+            $listResources[] = basename($folder);
+        }
+
+        // Response with list of saved import configurations
+        $status = 0;
+        $message = "";
+        if ($listResources) {
+            $status = 200;
+            $message = vsprintf("%d resource(s) found", count($listResources));
+        } else {
+            $status = 404;
+            $message = "No result";
+        }
+        $status = ($listResources) ? 200 : 404;
+        return $this->logJsonResonse($status, $message, ["ids" => $listResources]);
+
+    }
+
     /**
      * status Configuration
      * @Route("/import-configuration/{udid}")
