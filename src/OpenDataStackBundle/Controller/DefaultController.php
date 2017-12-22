@@ -72,7 +72,7 @@ class DefaultController extends Controller
         $timestamp = $date->format('Y-m-d H:i:s');
         $log = [
             "status" => "new",
-            "message" => "{$udid} created at {$timestamp}",
+            "message" => "dataset {$udid} created at {$timestamp}",
             "created_at" => $timestamp
         ];
 
@@ -84,7 +84,7 @@ class DefaultController extends Controller
 
         // 3.1. init Elasticsearch client
         $client = ClientBuilder::create()
-            ->setHosts([$this->container->getParameter('elasticsearch_host')])
+            ->setHosts([$this->container->getParameter('elastic_server_host')])
             ->setSSLVerification(false)
             ->build();
 
@@ -114,6 +114,76 @@ class DefaultController extends Controller
         ]);
     }
 
+
+    /**
+     * update Import Configuration
+     * @Route("/import-configuration")
+     * @Method("PUT")
+     * @ApiDoc(
+     *   tags={"in-development"},
+     *   description="Update an Import Configuration",
+     *   method="PUT",
+     *   section="Import Configurations",
+     *   statusCodes={
+     *       200="success",
+     *       400="error",
+     *   },
+     * )
+     */
+    public function updateImportConfigurationAction(Request $request)
+    {
+
+        //TODO:
+
+    }
+
+
+    /**
+     * status Resource
+     * @Route("/import-configuration/{udid}/resource/{resourceId}")
+     * @Method("GET")
+     * @ApiDoc(
+     *   tags={"in-development"},
+     *   description="Status for a csv resource",
+     *   method="GET",
+     *   requirements={
+     *    {
+     *      "name"="udid",
+     *      "dataType"="string",
+     *      "description"="udid of the dataset"
+     *    },
+     *     {
+     *      "name"="resourceId",
+     *      "dataType"="string",
+     *      "description"="udid of the resource"
+     *    }
+     *   },
+     *   section="Import Configurations",
+     *   statusCodes={
+     *       200="success",
+     *       404="not found",
+     *       400="error",
+     *   },
+     * )
+     */
+    public function statusResourceAction($udid, $resourceId)
+    {
+
+        if (!file_exists("/tmp/configurations/{$udid}")) {
+            return $this->logJsonResonse(404, "no configuration with the udid: {$udid}");
+        }
+
+        if (!file_exists("/tmp/configurations/{$udid}/{$resourceId}")) {
+            return $this->logJsonResonse(404, "no resource with the udid: {$resourceId}");
+        }
+
+        // parse log file and return the persisted status
+        $logJson = file_get_contents("/tmp/configurations/{$udid}/{$resourceId}/log.json");
+        $log = json_decode($logJson);
+
+        return $this->logJsonResonse(200, $log->message, ["flag" => $log->status]);
+    }
+
     /**
      * status Configuration
      * @Route("/import-configuration/{udid}")
@@ -141,11 +211,6 @@ class DefaultController extends Controller
     public function statusConfigurationAction($udid)
     {
 
-        // validate UDID exist
-        if (!$udid) {
-            return $this->logJsonResonse(400, "udid parameters required");
-        }
-
         if (!file_exists("/tmp/configurations/{$udid}")) {
             return $this->logJsonResonse(404, "no configuration with the udid: {$udid}");
         }
@@ -154,7 +219,7 @@ class DefaultController extends Controller
         $logJson = file_get_contents("/tmp/configurations/{$udid}/log.json");
         $log = json_decode($logJson);
 
-        return $this->logJsonResonse(200, $log->message, ["flag" => $log->status]);
+        return $this->logJsonResonse(200, $log->message);
     }
 
     /**

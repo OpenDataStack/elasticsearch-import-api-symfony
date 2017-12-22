@@ -39,7 +39,7 @@ class ImportCommand extends ContainerAwareCommand
 
         // Initialise Elasticsearch PHP Client
         $client = ClientBuilder::create()
-            ->setHosts(['http://elasticsearch:9200'])
+            ->setHosts([$this->getContainer()->getParameter('elastic_server_host')])
             ->setLogger(ClientBuilder::defaultLogger('/tmp/importer.log'))
             ->setSSLVerification(false)
             ->build();
