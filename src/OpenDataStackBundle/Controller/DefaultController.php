@@ -422,8 +422,12 @@ class DefaultController extends Controller
         ];
 
         $logJson = json_encode($log);
-        file_put_contents("/tmp/configurations/{$udid}/{$resourceId}/log.json", $logJson);
 
+        // Make sure the destination directory exidts.
+        $fs = $this->container->get('filesystem');
+        $dest = "/tmp/configurations/{$udid}/{$resourceId}";
+        $fs->mkdir($dest, 0777, TRUE);
+        file_put_contents("{$dest}/log.json", $logJson);
 
         // 3. Produce a message to process in the queue
 
