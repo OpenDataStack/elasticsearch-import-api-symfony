@@ -15,9 +15,16 @@ use Symfony\Component\Finder\Finder;
 use Symfony\Component\HttpFoundation\JsonResponse;
 
 use Symfony\Component\HttpFoundation\Request;
+use GuzzleHttp\Client;
+
 
 class DefaultController extends Controller
 {
+    /**
+     * @var Client $http
+     */
+    private $http;
+
 
     /**
      * add Import Configuration
@@ -110,10 +117,20 @@ class DefaultController extends Controller
         file_put_contents("/tmp/importer/configurations/{$udid}/log.json", $logJson);
         file_put_contents("/tmp/importer/configurations/{$udid}/config.json", $payloadJson);
 
-        //TODO: call kibana to create an index pattern with 'Kibana Rest Api'
+        // Call kibana to create an index pattern with 'Kibana Rest Api'
+        $config = [
+            'base_uri' => "http://localhost:5601",
+            'timeout' => 2.0,
+        ];
+        $this->http = new Client($config);
+
+        $response = $this->http->request('POST', '/api/saved_objects/index-pattern', [
+            'headers' => ['kbn-xsrf' => 'anything', 'Content-Type' => 'application/json'],
+            'json' => ['attributes' => ['title' => $templateName]]
+        ]);
 
         // 4. Respond successfully for import configuration added
-        return $this->logJsonResonse(200, $log['message']);
+        return $this->logJsonResonse(200, $log['message'], $response->getBody());
     }
 
 
@@ -517,6 +534,7 @@ class DefaultController extends Controller
 
         // 3. Produce a message to process in the queue
 
+        chown("/tmp/importer/enqueue", "www-data");
         $connectionFactory = new FsConnectionFactory('/tmp/importer/enqueue');
         $context = $connectionFactory->createContext();
 

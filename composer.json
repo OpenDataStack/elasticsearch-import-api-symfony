@@ -29,6 +29,7 @@
         "enqueue/fs": "^0.8.9",
         "enqueue/simple-client": "^0.8.9",
         "goodby/csv": "^1.3",
+        "guzzlehttp/guzzle": "^6.3",
         "incenteev/composer-parameter-handler": "^2.0",
         "league/csv": "^9.1",
         "monolog/monolog": "^1.23",
