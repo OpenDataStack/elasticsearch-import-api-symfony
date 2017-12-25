@@ -131,8 +131,91 @@ class DefaultController extends Controller
      */
     public function updateImportConfigurationAction(Request $request)
     {
+        $payloadJson = $request->getContent();
 
-        //TODO:
+        // 1. Request & Data Validation
+
+        if (!$payloadJson) {
+            return $this->logJsonResonse(400, "empty config parameters");
+        }
+
+        $payload = json_decode($payloadJson);
+
+        if (json_last_error() != JSON_ERROR_NONE) {
+            return $this->logJsonResonse(400, json_last_error_msg());
+        }
+
+        if (!property_exists($payload, "id") || !property_exists($payload, "resources") || !property_exists($payload, "config")) {
+            return $this->logJsonResonse(400, "Missing keys");
+        }
+
+        // 2. Recreate the import configuration folder structure
+        $udid = $payload->id;
+        $resources = $payload->resources;
+
+        $logJson = file_get_contents("/tmp/configurations/{$udid}/log.json");
+        $log = json_decode($logJson);
+
+        $fs = $this->container->get('filesystem');
+        try {
+            $fs->remove("/tmp/configurations/{$udid}");
+            $fs->mkdir("/tmp/configurations/{$udid}");
+        } catch (IOException $exception) {
+            return $this->logJsonResonse(400, $exception->getMessage());
+        }
+
+        // 2. Recreate index template mapping in elasticsearch
+
+        $client = ClientBuilder::create()
+            ->setHosts([$this->container->getParameter('elastic_server_host')])
+            ->setSSLVerification(false)
+            ->build();
+
+        $templateName = 'dkan-' . $udid;
+        $mappings = $payload->config->mappings;
+
+        if ($client->indices()->existsTemplate(['name' => $templateName])) {
+            $client->indices()->deleteTemplate(['name' => $templateName]);
+        }
+
+        $elasticsearch = $client->indices()->putTemplate([
+            'name' => $templateName,
+            'body' => [
+                'index_patterns' => [$templateName . '-*'],
+                'settings' => ['number_of_shards' => 1],
+                'mappings' => $mappings
+            ]
+        ]);
+
+        $log->elasticsearch = $elasticsearch;
+        $logJson = json_encode($log);
+        file_put_contents("/tmp/configurations/{$udid}/log.json", $logJson);
+        file_put_contents("/tmp/configurations/{$udid}/config.json", $payloadJson);
+
+        // 3. Produce messages for the resources provided
+        $connectionFactory = new FsConnectionFactory('/tmp/enqueue');
+        $context = $connectionFactory->createContext();
+
+        foreach ($resources as $resource) {
+
+            $resourceId = $resource->id;
+            $resourceUri = $resource->uri;
+
+            $data = [
+                'importer'  => $payload->type,
+                'uri'       => $resourceUri,
+                'udid'      => $udid,
+                'id'        => $resourceId
+            ];
+
+            $queue = $context->createQueue('importQueue');
+            $context->createProducer()->send(
+                $queue,
+                $context->createMessage(json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES))
+            );
+        }
+
+        return $this->logJsonResonse(200, "Resources for import configuration {$udid} are queued");
 
     }
 
