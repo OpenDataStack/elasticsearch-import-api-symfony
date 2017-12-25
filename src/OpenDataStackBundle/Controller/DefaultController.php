@@ -57,13 +57,16 @@ class DefaultController extends Controller
         $udid = $payload->id;
         $fs = $this->container->get('filesystem');
 
-        if ($fs->exists("/tmp/configurations/{$udid}")) {
+        if ($fs->exists("/tmp/importer/configurations/{$udid}")) {
             return $this->logJsonResonse(400, "Import configuration exist already");
         }
 
         // 2. Persist import-configuration in the filesystem
         try {
-            $fs->mkdir("/tmp/configurations/{$udid}");
+            $fs->mkdir("/tmp/importer/configurations/{$udid}");
+            chown("/tmp/importer/configurations","www-data");
+            chgrp("/tmp/importer/configurations","www-data");
+
         } catch (IOException $exception) {
             return $this->logJsonResonse(400, $exception->getMessage());
         }
@@ -104,8 +107,8 @@ class DefaultController extends Controller
         ];
 
         $logJson = json_encode($log);
-        file_put_contents("/tmp/configurations/{$udid}/log.json", $logJson);
-        file_put_contents("/tmp/configurations/{$udid}/config.json", $payloadJson);
+        file_put_contents("/tmp/importer/configurations/{$udid}/log.json", $logJson);
+        file_put_contents("/tmp/importer/configurations/{$udid}/config.json", $payloadJson);
 
         //TODO: call kibana to create an index pattern with 'Kibana Rest Api'
 
@@ -153,13 +156,13 @@ class DefaultController extends Controller
         $udid = $payload->id;
         $resources = $payload->resources;
 
-        $logJson = file_get_contents("/tmp/configurations/{$udid}/log.json");
+        $logJson = file_get_contents("/tmp/importer/configurations/{$udid}/log.json");
         $log = json_decode($logJson);
 
         $fs = $this->container->get('filesystem');
         try {
-            $fs->remove("/tmp/configurations/{$udid}");
-            $fs->mkdir("/tmp/configurations/{$udid}");
+            $fs->remove("/tmp/importer/configurations/{$udid}");
+            $fs->mkdir("/tmp/importer/configurations/{$udid}");
         } catch (IOException $exception) {
             return $this->logJsonResonse(400, $exception->getMessage());
         }
@@ -189,11 +192,11 @@ class DefaultController extends Controller
 
         $log->elasticsearch = $elasticsearch;
         $logJson = json_encode($log);
-        file_put_contents("/tmp/configurations/{$udid}/log.json", $logJson);
-        file_put_contents("/tmp/configurations/{$udid}/config.json", $payloadJson);
+        file_put_contents("/tmp/importer/configurations/{$udid}/log.json", $logJson);
+        file_put_contents("/tmp/importer/configurations/{$udid}/config.json", $payloadJson);
 
         // 3. Produce messages for the resources provided
-        $connectionFactory = new FsConnectionFactory('/tmp/enqueue');
+        $connectionFactory = new FsConnectionFactory('/tmp/importer/enqueue');
         $context = $connectionFactory->createContext();
 
         foreach ($resources as $resource) {
@@ -251,16 +254,16 @@ class DefaultController extends Controller
     public function statusResourceAction($udid, $resourceId)
     {
 
-        if (!file_exists("/tmp/configurations/{$udid}")) {
+        if (!file_exists("/tmp/importer/configurations/{$udid}")) {
             return $this->logJsonResonse(404, "no configuration with the udid: {$udid}");
         }
 
-        if (!file_exists("/tmp/configurations/{$udid}/{$resourceId}")) {
+        if (!file_exists("/tmp/importer/configurations/{$udid}/{$resourceId}")) {
             return $this->logJsonResonse(404, "no resource with the udid: {$resourceId}");
         }
 
         // parse log file and return the persisted status
-        $logJson = file_get_contents("/tmp/configurations/{$udid}/{$resourceId}/log.json");
+        $logJson = file_get_contents("/tmp/importer/configurations/{$udid}/{$resourceId}/log.json");
         $log = json_decode($logJson);
 
         return $this->logJsonResonse(200, $log->message, ["flag" => $log->status]);
@@ -297,7 +300,7 @@ class DefaultController extends Controller
 
         // Get list of folders for the import configurations
         $finder = new Finder();
-        $folders = $finder->directories()->in("/tmp/configurations/{$udid}");
+        $folders = $finder->directories()->in("/tmp/importer/configurations/{$udid}");
 
         $listResources = [];
         foreach ($folders as $folder) {
@@ -346,12 +349,12 @@ class DefaultController extends Controller
     public function statusConfigurationAction($udid)
     {
 
-        if (!file_exists("/tmp/configurations/{$udid}")) {
+        if (!file_exists("/tmp/importer/configurations/{$udid}")) {
             return $this->logJsonResonse(404, "no configuration with the udid: {$udid}");
         }
 
         // parse log file and return the persisted status
-        $logJson = file_get_contents("/tmp/configurations/{$udid}/log.json");
+        $logJson = file_get_contents("/tmp/importer/configurations/{$udid}/log.json");
         $log = json_decode($logJson);
 
         return $this->logJsonResonse(200, $log->message);
@@ -379,7 +382,7 @@ class DefaultController extends Controller
 
         // Get list of folders for the import configurations
         $finder = new Finder();
-        $folders = $finder->directories()->in("/tmp/configurations");
+        $folders = $finder->directories()->in("/tmp/importer/configurations");
 
         $listImportConfigurations = [];
         foreach ($folders as $folder) {
@@ -432,7 +435,7 @@ class DefaultController extends Controller
             return $this->logJsonResonse(400, "udid parameters required");
         }
 
-        if (!file_exists("/tmp/configurations/{$udid}")) {
+        if (!file_exists("/tmp/importer/configurations/{$udid}")) {
             return $this->logJsonResonse(404, "no configuration with the udid: {$udid}");
         }
 
@@ -440,7 +443,7 @@ class DefaultController extends Controller
         $fs = $this->container->get('filesystem');
 
         try {
-            $fs->remove("/tmp/configurations/{$udid}");
+            $fs->remove("/tmp/importer/configurations/{$udid}");
         } catch (IOException $exception) {
             return $this->logJsonResonse(400, "IOException on delete {$udid}");
         }
@@ -490,7 +493,7 @@ class DefaultController extends Controller
         $udid = $payload->udid;
         $resourceId = $payload->id;
 
-        if (!file_exists("/tmp/configurations/{$udid}")) {
+        if (!file_exists("/tmp/importer/configurations/{$udid}")) {
             return $this->logJsonResonse(404, "no configuration with the udid: {$udid}");
         }
 
@@ -508,13 +511,13 @@ class DefaultController extends Controller
 
         // Make sure the destination directory exidts.
         $fs = $this->container->get('filesystem');
-        $dest = "/tmp/configurations/{$udid}/{$resourceId}";
+        $dest = "/tmp/importer/configurations/{$udid}/{$resourceId}";
         $fs->mkdir($dest, 0777, TRUE);
         file_put_contents("{$dest}/log.json", $logJson);
 
         // 3. Produce a message to process in the queue
 
-        $connectionFactory = new FsConnectionFactory('/tmp/enqueue');
+        $connectionFactory = new FsConnectionFactory('/tmp/importer/enqueue');
         $context = $connectionFactory->createContext();
 
         $data = [
