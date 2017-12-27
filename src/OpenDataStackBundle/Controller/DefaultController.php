@@ -469,6 +469,68 @@ class DefaultController extends Controller
     }
 
     /**
+     * Delete Resource
+     * @Route("/request-import/{uuid}/resource/{resourceId}")
+     * @Method("DELETE")
+     * @ApiDoc(
+     *   description="Delete a resource",
+     *   tags={"in-development"},
+     *   method="DELETE",
+     *   requirements={
+     *    {
+     *      "name"="uuid",
+     *      "dataType"="string",
+     *      "description"="uuid of the resource dataset"
+     *    },
+     *    {
+     *      "name"="resourceId",
+     *      "dataType"="string",
+     *      "description"="resourceId of the resource to be deleted"
+     *    }
+     *   },
+     *   section="Import Configurations",
+     *   statusCodes={
+     *       200="success",
+     *       400="error",
+     *       404="not found",
+     *   }
+     *
+     * )
+     */
+    public function requestClearAction($uuid, $resourceId)
+    {
+        if (!$uuid || !$resourceId) {
+            return $this->logJsonResonse(400, "uuid and resourceId parameters are required!");
+        }
+
+        if (!file_exists("/tmp/configurations/{$uuid}")) {
+            return $this->logJsonResonse(404, "No configuration with the uuid: {$uuid}");
+        }
+
+        if (!file_exists("/tmp/configurations/{$uuid}/{$resourceId}")) {
+            return $this->logJsonResonse(404, "No resource with the uuid: {$resourceId}");
+        }
+
+        // Remove the resource folder
+        $fs = $this->container->get('filesystem');
+        try {
+            $fs->remove("/tmp/configurations/{$uuid}/{$resourceId}");
+            $client = ClientBuilder::create()
+                ->setHosts([$this->container->getParameter('elastic_server_host')])
+                ->setSSLVerification(false)
+                ->build();
+            $indexName = 'dkan-' . $uuid . '-' . $resourceId;
+            if ($client->indices()->exists(['index' => $indexName])) {
+                $client->indices()->delete(['index' => $indexName]);
+            }
+        } catch (\Exception $exception) {
+            return $this->logJsonResonse(400, $exception->getMessage());
+        }
+
+        return $this->logJsonResonse(200, "The resource with the {$resourceId} has been deleted");
+    }
+
+    /**
      * request ImportConfiguration
      * @Route("/request-import")
      * @Method("POST")
