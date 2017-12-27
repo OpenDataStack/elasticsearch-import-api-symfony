@@ -32,7 +32,8 @@ class ImportCommand extends ContainerAwareCommand
         $output->writeln("Listening for the Queue: --importQueue--");
 
         // Initialise a Queue consumer
-        $connectionFactory = new FsConnectionFactory('/tmp/enqueue');
+        $connectionFactory = new FsConnectionFactory('/tmp/importer/enqueue');
+        //TODO: chown '/tmp/importer/enqueue' to 'www-data'
         $context = $connectionFactory->createContext();
         $importQueue = $context->createQueue('importQueue');
         $queueConsumer = new QueueConsumer($context);
@@ -40,7 +41,7 @@ class ImportCommand extends ContainerAwareCommand
         // Initialise Elasticsearch PHP Client
         $client = ClientBuilder::create()
             ->setHosts([$this->getContainer()->getParameter('elastic_server_host')])
-            ->setLogger(ClientBuilder::defaultLogger('/tmp/importer.log'))
+            ->setLogger(ClientBuilder::defaultLogger('/tmp/importer/importer.log'))
             ->setSSLVerification(false)
             ->build();
 
@@ -53,7 +54,7 @@ class ImportCommand extends ContainerAwareCommand
             $udid = $data['udid'];
             $resourceId = $data['id'];
 
-            $configJson = file_get_contents("/tmp/configurations/{$udid}/config.json");
+            $configJson = file_get_contents("/tmp/importer/configurations/{$udid}/config.json");
             $config = json_decode($configJson, true);
 
             $mapping = $config['config']['mappings'];
@@ -64,22 +65,22 @@ class ImportCommand extends ContainerAwareCommand
             $output->writeln("URI: " . $data['uri']);
 
             // Update import config status to : ** importing **
-            $logJson = file_get_contents("/tmp/configurations/{$udid}/{$resourceId}/log.json");
+            $logJson = file_get_contents("/tmp/importer/configurations/{$udid}/{$resourceId}/log.json");
             $log = json_decode($logJson);
             $log->status = "importing";
             $logJson = json_encode($log);
-            file_put_contents("/tmp/configurations/{$udid}/{$resourceId}/log.json", $logJson);
+            file_put_contents("/tmp/importer/configurations/{$udid}/{$resourceId}/log.json", $logJson);
 
             // 1. Download CSV Resource
             $uniqueFileName = vsprintf("resource_%s.csv", uniqid());
-            $filePath = "/tmp/configurations/" . $udid . "/" . $resourceId . "/" . $uniqueFileName;
+            $filePath = "/tmp/importer/configurations/" . $udid . "/" . $resourceId . "/" . $uniqueFileName;
             $uri = $data['uri'];
 
             // if the download fails , update log status to **error** and remove the message from the queue
             if (!file_put_contents($filePath, fopen($uri, 'r'))) {
                 $log->status = "error";
                 $logJson = json_encode($log);
-                file_put_contents("/tmp/configurations/{$udid}/{$resourceId}/log.json", $logJson);
+                file_put_contents("/tmp/importer/configurations/{$udid}/{$resourceId}/log.json", $logJson);
 
                 return PsrProcessor::REJECT;
             }
@@ -124,11 +125,11 @@ class ImportCommand extends ContainerAwareCommand
             }
 
             // 5. Update import config status to : ** importing **
-            $logJson = file_get_contents("/tmp/configurations/{$udid}/{$resourceId}/log.json");
+            $logJson = file_get_contents("/tmp/importer/configurations/{$udid}/{$resourceId}/log.json");
             $log = json_decode($logJson);
             $log->status = "done";
             $logJson = json_encode($log);
-            file_put_contents("/tmp/configurations/{$udid}/{$resourceId}/log.json", $logJson);
+            file_put_contents("/tmp/importer/configurations/{$udid}/{$resourceId}/log.json", $logJson);
 
             return PsrProcessor::ACK;
         });
