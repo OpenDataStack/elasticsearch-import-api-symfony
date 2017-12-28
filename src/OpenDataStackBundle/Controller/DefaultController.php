@@ -503,18 +503,18 @@ class DefaultController extends Controller
             return $this->logJsonResonse(400, "uuid and resourceId parameters are required!");
         }
 
-        if (!file_exists("/tmp/configurations/{$uuid}")) {
+        if (!file_exists("/tmp/importer/configurations/{$uuid}")) {
             return $this->logJsonResonse(404, "No configuration with the uuid: {$uuid}");
         }
 
-        if (!file_exists("/tmp/configurations/{$uuid}/{$resourceId}")) {
+        if (!file_exists("/tmp/importer/configurations/{$uuid}/{$resourceId}")) {
             return $this->logJsonResonse(404, "No resource with the uuid: {$resourceId}");
         }
 
         // Remove the resource folder
         $fs = $this->container->get('filesystem');
         try {
-            $fs->remove("/tmp/configurations/{$uuid}/{$resourceId}");
+            $fs->remove("/tmp/importer/configurations/{$uuid}/{$resourceId}");
             $client = ClientBuilder::create()
                 ->setHosts([$this->container->getParameter('elastic_server_host')])
                 ->setSSLVerification(false)
