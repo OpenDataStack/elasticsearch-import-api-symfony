@@ -71,8 +71,8 @@ class DefaultController extends Controller
         // 2. Persist import-configuration in the filesystem
         try {
             $fs->mkdir("/tmp/importer/configurations/{$udid}");
-            chown("/tmp/importer/configurations","www-data");
-            chgrp("/tmp/importer/configurations","www-data");
+            chown("/tmp/importer/configurations", "www-data");
+            chgrp("/tmp/importer/configurations", "www-data");
 
         } catch (IOException $exception) {
             return $this->logJsonResonse(400, $exception->getMessage());
@@ -81,10 +81,7 @@ class DefaultController extends Controller
 
         // 3. Add mapping template to Elasticsearch
         // 3.1. init Elasticsearch client
-        $client = ClientBuilder::create()
-            ->setHosts([$this->container->getParameter('elastic_server_host')])
-            ->setSSLVerification(false)
-            ->build();
+        $client = $this->getClientBuilder();
 
         // 3.2. (re)Create Template mapping for indexes under this import configuration
 
@@ -186,10 +183,7 @@ class DefaultController extends Controller
 
         // 2. Recreate index template mapping in elasticsearch
 
-        $client = ClientBuilder::create()
-            ->setHosts([$this->container->getParameter('elastic_server_host')])
-            ->setSSLVerification(false)
-            ->build();
+        $client = $this->getClientBuilder();
 
         $templateName = 'dkan-' . $udid;
         $mappings = $payload->config->mappings;
@@ -222,10 +216,10 @@ class DefaultController extends Controller
             $resourceUri = $resource->uri;
 
             $data = [
-                'importer'  => $payload->type,
-                'uri'       => $resourceUri,
-                'udid'      => $udid,
-                'id'        => $resourceId
+                'importer' => $payload->type,
+                'uri' => $resourceUri,
+                'udid' => $udid,
+                'id' => $resourceId
             ];
 
             $queue = $context->createQueue('importQueue');
@@ -285,7 +279,6 @@ class DefaultController extends Controller
 
         return $this->logJsonResonse(200, $log->message, ["flag" => $log->status]);
     }
-
 
 
     /**
@@ -422,7 +415,7 @@ class DefaultController extends Controller
 
     /**
      * delete Configuration
-     * @Route("/import-configuration/{udid}")
+     * @Route("/import-configuration/{uuid}")
      * @Method("DELETE")
      * @ApiDoc(
      *   description="Delete an Import configuration",
@@ -430,9 +423,9 @@ class DefaultController extends Controller
      *   method="DELETE",
      *   requirements={
      *    {
-     *      "name"="udid",
+     *      "name"="uuid",
      *      "dataType"="string",
-     *      "description"="udid of the resource to be deleted"
+     *      "description"="uuid of the resource to be deleted"
      *    }
      *   },
      *   section="Import Configurations",
@@ -441,31 +434,59 @@ class DefaultController extends Controller
      *       400="error",
      *       404="not found",
      *   }
-     *
      * )
      */
-    public function deleteConfigurationAction($udid)
+    public function deleteConfigurationAction($uuid)
     {
-
-        // validate UDID exist
-        if (!$udid) {
-            return $this->logJsonResonse(400, "udid parameters required");
+        if (!$uuid) {
+            return $this->logJsonResonse(400, "uuid parameters required");
         }
 
-        if (!file_exists("/tmp/importer/configurations/{$udid}")) {
-            return $this->logJsonResonse(404, "no configuration with the udid: {$udid}");
+        if (!file_exists("/tmp/importer/configurations/{$uuid}")) {
+            return $this->logJsonResonse(404, "no configuration with the uuid: {$uuid}");
         }
 
-        // Remove the import configurations folder
+        // Remove the import configurations folder, template and related indexes
         $fs = $this->container->get('filesystem');
 
         try {
-            $fs->remove("/tmp/importer/configurations/{$udid}");
-        } catch (IOException $exception) {
-            return $this->logJsonResonse(400, "IOException on delete {$udid}");
+            $client = $this->getClientBuilder();
+            $this->indexDeleteAction($uuid, $client);
+            $fs->remove("/tmp/importer/configurations/{$uuid}");
+        } catch (\Exception $exception) {
+            return $this->logJsonResonse(400, $exception->getMessage());
         }
 
-        return $this->logJsonResonse(200, "{$udid} deleted");
+        return $this->logJsonResonse(200, "The dataset with the uuid: {$uuid} has been deleted");
+    }
+
+    /**
+     * Delete an index from Elasticsearch
+     */
+    private function indexDeleteAction($uuid, $client)
+    {
+        $templateName = 'dkan-' . $uuid;
+        if ($client->indices()->existsTemplate(['name' => $templateName])) {
+            $client->indices()->deleteTemplate(['name' => $templateName]);
+        }
+
+        // Fix the $indexName by adding regex
+        $indexName = 'dkan-' . $uuid . '-';
+        if ($client->indices()->exists(['index' => $indexName])) {
+            $client->indices()->delete(['index' => $indexName]);
+        }
+    }
+
+    /**
+     * Create a new instance of ClientBuilder
+     */
+    private function getClientBuilder()
+    {
+        $client = ClientBuilder::create()
+            ->setHosts([$this->container->getParameter('elastic_server_host')])
+            ->setSSLVerification(false)
+            ->build();
+        return $client;
     }
 
     /**
@@ -515,10 +536,7 @@ class DefaultController extends Controller
         $fs = $this->container->get('filesystem');
         try {
             $fs->remove("/tmp/importer/configurations/{$uuid}/{$resourceId}");
-            $client = ClientBuilder::create()
-                ->setHosts([$this->container->getParameter('elastic_server_host')])
-                ->setSSLVerification(false)
-                ->build();
+            $client = $this->getClientBuilder();
             $indexName = 'dkan-' . $uuid . '-' . $resourceId;
             if ($client->indices()->exists(['index' => $indexName])) {
                 $client->indices()->delete(['index' => $indexName]);
@@ -601,10 +619,10 @@ class DefaultController extends Controller
         $context = $connectionFactory->createContext();
 
         $data = [
-            'importer'  => $payload->type,
-            'uri'       => $payload->url,
-            'udid'      => $payload->udid,
-            'id'        => $payload->id
+            'importer' => $payload->type,
+            'uri' => $payload->url,
+            'udid' => $payload->udid,
+            'id' => $payload->id
         ];
         $queue = $context->createQueue('importQueue');
         $context->createProducer()->send(
