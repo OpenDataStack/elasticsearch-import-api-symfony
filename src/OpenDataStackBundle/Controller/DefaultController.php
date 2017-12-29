@@ -451,7 +451,7 @@ class DefaultController extends Controller
 
         try {
             $client = $this->getClientBuilder();
-            $this->indexDeleteAction($uuid, $client);
+            $this->indexTemplateDeleteAction($uuid, $client);
             $fs->remove("/tmp/importer/configurations/{$uuid}");
         } catch (\Exception $exception) {
             return $this->logJsonResonse(400, $exception->getMessage());
@@ -461,20 +461,21 @@ class DefaultController extends Controller
     }
 
     /**
-     * Delete an index from Elasticsearch
+     * Delete a dataset template and its indexes from Elasticsearch and Kibana
      */
-    private function indexDeleteAction($uuid, $client)
+    private function indexTemplateDeleteAction($uuid, $client)
     {
+        // Delete dataset template
         $templateName = 'dkan-' . $uuid;
         if ($client->indices()->existsTemplate(['name' => $templateName])) {
             $client->indices()->deleteTemplate(['name' => $templateName]);
         }
-
         // Fix the $indexName by adding regex
-        $indexName = 'dkan-' . $uuid . '-';
+        $indexName = 'dkan-' . $uuid . '-*';
         if ($client->indices()->exists(['index' => $indexName])) {
             $client->indices()->delete(['index' => $indexName]);
         }
+        // delete indexes from kibana
     }
 
     /**
