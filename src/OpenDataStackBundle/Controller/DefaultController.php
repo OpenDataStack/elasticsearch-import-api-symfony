@@ -27,7 +27,8 @@ class DefaultController extends Controller
 
 
     /**
-     * add Import Configuration
+     * Add Import Configuration.
+     *
      * @Route("/import-configuration")
      * @Method("POST")
      * @ApiDoc(
@@ -78,13 +79,11 @@ class DefaultController extends Controller
             return $this->logJsonResonse(400, $exception->getMessage());
         }
 
-
         // 3. Add mapping template to Elasticsearch
         // 3.1. init Elasticsearch client
         $client = $this->getClientBuilder();
 
         // 3.2. (re)Create Template mapping for indexes under this import configuration
-
         $templateName = 'dkan-' . $udid;
         $mappings = $payload->config->mappings;
 
@@ -101,7 +100,7 @@ class DefaultController extends Controller
             ]
         ]);
 
-        // Persist response to log file
+        // Persist response to log file.
         $date = new \DateTime('now');
         $timestamp = $date->format('Y-m-d H:i:s');
         $log = [
@@ -114,25 +113,42 @@ class DefaultController extends Controller
         file_put_contents("/tmp/importer/configurations/{$udid}/log.json", $logJson);
         file_put_contents("/tmp/importer/configurations/{$udid}/config.json", $payloadJson);
 
-        // Call kibana to create an index pattern with 'Kibana Rest Api'
-        $config = [
-            'base_uri' => "http://localhost:5601",
-            'timeout' => 2.0,
-        ];
-        $this->http = new Client($config);
+        // Get all of the available indexs.
+        $kibana_indices = $client->cat()->indices(array('index' => '.kibana*',));
 
-        $response = $this->http->request('POST', '/api/saved_objects/index-pattern', [
-            'headers' => ['kbn-xsrf' => 'anything', 'Content-Type' => 'application/json'],
-            'json' => ['attributes' => ['title' => $templateName]]
-        ]);
+        $kibana_indexpattern_id = $templateName . '-*';
+
+        $bulk_params = array('body' => array());
+        foreach ($kibana_indices as $kibana_index) {
+            $bulk_params['body'][] = array(
+                'update' => array(
+                    '_index' => $kibana_index['index'],
+                    '_type' => 'doc',
+                    '_id' => 'index-pattern:' . $kibana_indexpattern_id,
+                )
+            );
+
+            $bulk_params['body'][] = array(
+                'doc_as_upsert' => 'true',
+                'doc' => array (
+                    'type' => 'index-pattern',
+                    'index-pattern' => array(
+                        "timeFieldName" => "@timestamp",
+                        "title" => $kibana_indexpattern_id,
+                    ),
+                ),
+            );
+        }
+
+        $updateLogs = $client->bulk($bulk_params);
 
         // 4. Respond successfully for import configuration added
-        return $this->logJsonResonse(200, $log['message'], $response->getBody());
+        return $this->logJsonResonse(200, $log['message'], $updateLogs);
     }
 
 
     /**
-     * update Import Configuration
+     * Update Import Configuration
      * @Route("/import-configuration")
      * @Method("PUT")
      * @ApiDoc(
