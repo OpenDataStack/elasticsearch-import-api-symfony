@@ -65,8 +65,14 @@ class ImportCommand extends ContainerAwareCommand
             $output->writeln("URI: " . $data['uri']);
 
             // Update import config status to : ** importing **
-            $logJson = file_get_contents("/tmp/importer/configurations/{$udid}/{$resourceId}/log.json");
-            $log = json_decode($logJson);
+            $log = null;
+            if (file_exists("/tmp/importer/configurations/{$udid}/{$resourceId}/log.json")) {
+                $logJson = file_get_contents("/tmp/importer/configurations/{$udid}/{$resourceId}/log.json");
+                $log = json_decode($logJson);
+            } else {
+                $log = new \stdClass;
+            }
+
             $log->status = "importing";
             $logJson = json_encode($log);
             file_put_contents("/tmp/importer/configurations/{$udid}/{$resourceId}/log.json", $logJson);
@@ -123,6 +129,65 @@ class ImportCommand extends ContainerAwareCommand
             if (!empty($params['body'])) {
                 $response = $client->bulk($params);
             }
+
+            // Get mappings for all types in 'my_index'.
+            $params = [
+                'field' => '*',
+                'index' => $indexName,
+                'include_defaults' => true
+            ];
+
+            // Update the kibana index-pattern.
+            $response = $client->indices()->getFieldMapping($params);
+            // Convert ES mapping to kibana mappings.
+            $contract_mapping = $response[$indexName]['mappings']['contract'];
+            $index_pattern_fields = array();
+            foreach ($contract_mapping as $field_properties) {
+                $field_full_name = $field_properties['full_name'];
+                $field_mapping = array_pop($field_properties['mapping']);
+                // Skip system fields that starts with '_'.
+                if (strpos($field_full_name, '_') !== 0) {
+                    $index_pattern_fields[] = array(
+                        'name' => $field_full_name,
+                        'type' => $field_mapping['type'],
+                        'indexed' => $field_mapping['index'],
+                        'doc_values' => $field_mapping['doc_values'],
+                    );
+                }
+            }
+
+            // Update Kibana index patterns fields mapping for all of the
+            // .kibana indices.
+            // Start by getting all of the available kibana own home indexs.
+            $kibana_indices = $client->cat()->indices(array('index' => '.kibana*',));
+
+            $kibana_indexpattern_id = 'dkan-' . $udid . '-*';
+
+            $bulk_params = array('body' => array());
+            foreach ($kibana_indices as $kibana_index) {
+                $bulk_params['body'][] = array(
+                    'update' => array(
+                        '_index' => $kibana_index['index'],
+                        '_type' => 'doc',
+                        '_id' => 'index-pattern:' . $kibana_indexpattern_id,
+                    )
+                );
+
+                $bulk_params['body'][] = array(
+                    'doc_as_upsert' => 'true',
+                    'doc' => array (
+                        'type' => 'index-pattern',
+                        'index-pattern' => array(
+                            "title" => $kibana_indexpattern_id,
+                            "fields" => json_encode($index_pattern_fields),
+                        ),
+                    ),
+                );
+            }
+
+            $updateLogs = $client->bulk($bulk_params);
+            var_dump(json_encode($index_pattern_fields));
+            var_dump($updateLogs);
 
             // 5. Update import config status to : ** importing **
             $logJson = file_get_contents("/tmp/importer/configurations/{$udid}/{$resourceId}/log.json");
