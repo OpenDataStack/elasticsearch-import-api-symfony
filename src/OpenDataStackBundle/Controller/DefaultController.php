@@ -79,11 +79,12 @@ class DefaultController extends Controller
             return $this->logJsonResonse(400, $exception->getMessage());
         }
 
-        // 3. Add mapping template to Elasticsearch
-        // 3.1. init Elasticsearch client
+        // 3. Add mapping template to Elasticsearch.
+        // 3.1. init Elasticsearch client.
         $client = $this->getClientBuilder();
 
-        // 3.2. (re)Create Template mapping for indexes under this import configuration
+        // 3.2. (re)Create Template mapping for indexes under this import
+        // configuration.
         $templateName = 'dkan-' . $udid;
         $mappings = $payload->config->mappings;
 
@@ -113,9 +114,10 @@ class DefaultController extends Controller
         file_put_contents("/tmp/importer/configurations/{$udid}/log.json", $logJson);
         file_put_contents("/tmp/importer/configurations/{$udid}/config.json", $payloadJson);
 
+        // Create minimal kibana index pattern. The fields will be updated
+        // during the data upload.
         // Get all of the available indexs.
         $kibana_indices = $client->cat()->indices(array('index' => '.kibana*',));
-
         $kibana_indexpattern_id = $templateName . '-*';
 
         $bulk_params = array('body' => array());
@@ -133,7 +135,6 @@ class DefaultController extends Controller
                 'doc' => array (
                     'type' => 'index-pattern',
                     'index-pattern' => array(
-                        "timeFieldName" => "@timestamp",
                         "title" => $kibana_indexpattern_id,
                     ),
                 ),
