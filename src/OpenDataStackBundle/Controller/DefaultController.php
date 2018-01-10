@@ -492,7 +492,27 @@ class DefaultController extends Controller
         if ($client->indices()->exists(['index' => $indexName])) {
             $client->indices()->delete(['index' => $indexName]);
         }
-        // delete indexes from kibana
+
+        /*
+         * Delete index patterns from kibana.
+         */
+        // Get all current Kibana users indices.
+        $kibana_indices = $client->cat()->indices(array('index' => '.kibana*',));
+        // Init loop variables.
+        $kibana_indexpattern_id = $templateName . '-*';
+        $bulk_params = array('body' => array());
+
+        foreach ($kibana_indices as $kibana_index) {
+            $bulk_params['body'][] = array(
+                'delete' => array(
+                    '_index' => $kibana_index['index'],
+                    '_type' => 'doc',
+                    '_id' => 'index-pattern:' . $kibana_indexpattern_id,
+                )
+            );
+        }
+
+        $client->bulk($bulk_params);
     }
 
     /**
