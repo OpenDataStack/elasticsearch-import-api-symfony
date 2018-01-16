@@ -182,8 +182,7 @@ class DefaultController extends Controller
         if (!property_exists($payload, "id") || !property_exists($payload, "resources") || !property_exists($payload, "config")) {
             return $this->logJsonResonse(400, "Missing keys");
         }
-
-        // 2. Recreate the import configuration folder structure
+        // Recreate the import configuration folder structure
         $udid = $payload->id;
         $resources = $payload->resources;
 
@@ -197,9 +196,7 @@ class DefaultController extends Controller
         } catch (IOException $exception) {
             return $this->logJsonResonse(400, $exception->getMessage());
         }
-
-        // 2. Recreate index template mapping in elasticsearch
-
+        // Recreate index template mapping in elasticsearch
         $client = $this->getClientBuilder();
 
         $templateName = 'dkan-' . $udid;
@@ -226,30 +223,48 @@ class DefaultController extends Controller
         // 3. Produce messages for the resources provided
         $connectionFactory = new FsConnectionFactory('/tmp/importer/enqueue');
         $context = $connectionFactory->createContext();
-
         foreach ($resources as $resource) {
-
-            $resourceId = $resource->id;
-            $resourceUri = $resource->uri;
-
-            $data = [
-                'importer' => $payload->type,
-                'uri' => $resourceUri,
-                'udid' => $udid,
-                'id' => $resourceId
-            ];
-
-            $queue = $context->createQueue('importQueue');
-            $context->createProducer()->send(
-                $queue,
-                $context->createMessage(json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES))
-            );
+           $this->importSingleResource($payload, $resource, $udid, $context);
         }
 
         return $this->logJsonResonse(200, "Resources for import configuration {$udid} are queued");
-
     }
 
+    /**
+     * Queue a single resource
+     */
+    private function importSingleResource($payload, $resource, $udid, $context)
+    {
+        // Prepare logs
+        $date = new \DateTime('now');
+        $timestamp = $date->format('Y-m-d H:i:s');
+        $log = [
+            "message" => "resource {$resource->id} created at {$timestamp}",
+            "created_at" => $timestamp,
+            "status" => "queued"
+        ];
+        $logJson = json_encode($log);
+        // Make sure the destination directory exists
+        $fs = $this->container->get('filesystem');
+        $dest = "/tmp/importer/configurations/{$udid}/{$resource->id}";
+        $fs->mkdir($dest, 0777, TRUE);
+        file_put_contents("{$dest}/log.json", $logJson);
+        // Produce a message to process in the queue
+        chown("/tmp/importer/enqueue", "www-data");
+        // Prepare data
+        $data = [
+            'importer' => $payload->type,
+            'uri' => $resource->uri,
+            'udid' => $udid,
+            'id' => $resource->id
+        ];
+        // Queue data
+        $queue = $context->createQueue('importQueue');
+        $context->createProducer()->send(
+            $queue,
+            $context->createMessage(json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES))
+        );
+    }
 
     /**
      * status Resource
