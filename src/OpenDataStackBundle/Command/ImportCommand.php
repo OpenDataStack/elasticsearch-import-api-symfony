@@ -186,8 +186,6 @@ class ImportCommand extends ContainerAwareCommand
             }
 
             $updateLogs = $client->bulk($bulk_params);
-            var_dump(json_encode($index_pattern_fields));
-            var_dump($updateLogs);
 
             // 5. Update import config status to : ** importing **
             $logJson = file_get_contents("/tmp/importer/configurations/{$udid}/{$resourceId}/log.json");
