@@ -107,7 +107,7 @@ class DefaultController extends Controller
         $log = [
             "message" => "dataset {$udid} created at {$timestamp}",
             "created_at" => $timestamp,
-            "elasticsearch" => $elasticsearch
+            "elasticsearch" => $elasticsearch,
         ];
 
         $logJson = json_encode($log);
@@ -116,35 +116,45 @@ class DefaultController extends Controller
 
         // Create minimal kibana index pattern. The fields will be updated
         // during the data upload.
-        // Get all of the available indexs.
-        $kibana_indices = $client->cat()->indices(array('index' => '.kibana*',));
-        $kibana_indexpattern_id = $templateName . '-*';
+        $updateLogs = array();
+        try {
+            // Get all of the available indexs.
+            $kibana_indices = $client->cat()->indices(array('index' => '.kibana*',));
+            if (!empty($kibana_indices)) {
+                $kibana_indexpattern_id = $templateName . '-*';
 
-        $bulk_params = array('body' => array());
-        foreach ($kibana_indices as $kibana_index) {
-            $bulk_params['body'][] = array(
-                'update' => array(
-                    '_index' => $kibana_index['index'],
-                    '_type' => 'doc',
-                    '_id' => 'index-pattern:' . $kibana_indexpattern_id,
-                )
-            );
+                $bulk_params = array('body' => array());
+                foreach ($kibana_indices as $kibana_index) {
+                    $bulk_params['body'][] = array(
+                        'update' => array(
+                            '_index' => $kibana_index['index'],
+                            '_type' => 'doc',
+                            '_id' => 'index-pattern:' . $kibana_indexpattern_id,
+                        )
+                    );
 
-            $bulk_params['body'][] = array(
-                'doc_as_upsert' => 'true',
-                'doc' => array (
-                    'type' => 'index-pattern',
-                    'index-pattern' => array(
-                        "title" => $kibana_indexpattern_id,
-                    ),
-                ),
-            );
+                    $bulk_params['body'][] = array(
+                        'doc_as_upsert' => 'true',
+                        'doc' => array (
+                            'type' => 'index-pattern',
+                            'index-pattern' => array(
+                                "title" => $kibana_indexpattern_id,
+                            ),
+                        ),
+                    );
+                }
+                $updateLogs = $client->bulk($bulk_params);
+            }
+        } catch (\Exception $e) {
+            // Make sure to log the message.
+            return $this->logJsonResonse(500, $log['message'], array('exception' => $e->getMessage()));
         }
 
-        $updateLogs = $client->bulk($bulk_params);
+        // TODO update the log file?
+        $log['kibana'] = $updateLogs;
 
-        // 4. Respond successfully for import configuration added
-        return $this->logJsonResonse(200, $log['message'], $updateLogs);
+        // Respond successfully for import configuration added.
+        return $this->logJsonResonse(200, $log['message'], $log);
     }
 
 
