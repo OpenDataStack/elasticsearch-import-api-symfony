@@ -2,6 +2,8 @@
 
 namespace OpenDataStackBundle\Command;
 
+use OpenDataStackBundle\Helper\KibanaHelper;
+
 use Elasticsearch\ClientBuilder;
 use Enqueue\Consumption\QueueConsumer;
 use Enqueue\Fs\FsConnectionFactory;
@@ -101,17 +103,17 @@ class ImportCommand extends ContainerAwareCommand
             $records = $csv->getRecords(); //returns all the CSV records as an Iterator object
 
             // 3. Clear & Recreate index
-            $indexName = 'dkan-' . $udid . '-' . $resourceId;
-            if ($client->indices()->exists(['index' => $indexName])) {
-                $client->indices()->delete(['index' => $indexName]);
+            $index = 'dkan-' . $udid . '-' . $resourceId;
+            if ($client->indices()->exists(['index' => $index])) {
+                $client->indices()->delete(['index' => $index]);
             }
-            $response = $client->indices()->create(['index' => $indexName]);
+            $response = $client->indices()->create(['index' => $index]);
 
             // 4. Batch index 1000 records at a time
             foreach ($records as $key => $rowFields) {
                 $params['body'][] = [
                     'index' => [
-                        '_index' => $indexName,
+                        '_index' => $index,
                         '_type' => $indexType
                     ]
                 ];
@@ -130,62 +132,20 @@ class ImportCommand extends ContainerAwareCommand
                 $response = $client->bulk($params);
             }
 
-            // Get mappings for all types in 'my_index'.
-            $params = [
-                'field' => '*',
-                'index' => $indexName,
-                'include_defaults' => true
-            ];
-
-            // Update the kibana index-pattern.
-            $response = $client->indices()->getFieldMapping($params);
-            // Convert ES mapping to kibana mappings.
-            $contract_mapping = $response[$indexName]['mappings']['contract'];
-            $index_pattern_fields = array();
-            foreach ($contract_mapping as $field_properties) {
-                $field_full_name = $field_properties['full_name'];
-                $field_mapping = array_pop($field_properties['mapping']);
-                // Skip system fields that starts with '_'.
-                if (strpos($field_full_name, '_') !== 0) {
-                    $index_pattern_fields[] = array(
-                        'name' => $field_full_name,
-                        'type' => $field_mapping['type'],
-                        'indexed' => $field_mapping['index'],
-                        'doc_values' => $field_mapping['doc_values'],
-                    );
-                }
-            }
+            // The Kibana index-pattern was created in the HTTP request but
+            // with empty settings. Update the index-pattern fields.
+            $updateLogs = array();
+            $index_pattern_fields = KibanaHelper::kibanaGetFieldMapping($client, $index);
 
             // Update Kibana index patterns fields mapping for all of the
             // .kibana indices.
-            // Start by getting all of the available kibana own home indexs.
-            $kibana_indices = $client->cat()->indices(array('index' => '.kibana*',));
+            KibanaHelper::kibanaUpsertIndexPattern($client, 'dkan-' . $udid . '-*',
+                'dkan-' . $udid . '-*', $index_pattern_fields, $updateLogs);
 
-            $kibana_indexpattern_id = 'dkan-' . $udid . '-*';
-
-            $bulk_params = array('body' => array());
-            foreach ($kibana_indices as $kibana_index) {
-                $bulk_params['body'][] = array(
-                    'update' => array(
-                        '_index' => $kibana_index['index'],
-                        '_type' => 'doc',
-                        '_id' => 'index-pattern:' . $kibana_indexpattern_id,
-                    )
-                );
-
-                $bulk_params['body'][] = array(
-                    'doc_as_upsert' => 'true',
-                    'doc' => array (
-                        'type' => 'index-pattern',
-                        'index-pattern' => array(
-                            "title" => $kibana_indexpattern_id,
-                            "fields" => json_encode($index_pattern_fields),
-                        ),
-                    ),
-                );
-            }
-
-            $updateLogs = $client->bulk($bulk_params);
+            // Update the Full "dkan-*" kibana index-pattern.
+            $index_pattern_fields = KibanaHelper::kibanaGetFieldMapping($client);
+            KibanaHelper::kibanaUpsertIndexPattern($client, 'dkan-*', 'dkan-*',
+                $index_pattern_fields, $updateLogs);
 
             // 5. Update import config status to : ** importing **
             $logJson = file_get_contents("/tmp/importer/configurations/{$udid}/{$resourceId}/log.json");

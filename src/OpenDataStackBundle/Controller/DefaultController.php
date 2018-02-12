@@ -2,6 +2,8 @@
 
 namespace OpenDataStackBundle\Controller;
 
+use OpenDataStackBundle\Helper\KibanaHelper;
+
 use Elasticsearch\ClientBuilder;
 use Enqueue\Fs\FsConnectionFactory;
 use Nelmio\ApiDocBundle\Annotation\ApiDoc;
@@ -118,33 +120,7 @@ class DefaultController extends Controller
         // during the data upload.
         $updateLogs = array();
         try {
-            // Get all of the available indexs.
-            $kibana_indices = $client->cat()->indices(array('index' => '.kibana*',));
-            if (!empty($kibana_indices)) {
-                $kibana_indexpattern_id = $templateName . '-*';
-
-                $bulk_params = array('body' => array());
-                foreach ($kibana_indices as $kibana_index) {
-                    $bulk_params['body'][] = array(
-                        'update' => array(
-                            '_index' => $kibana_index['index'],
-                            '_type' => 'doc',
-                            '_id' => 'index-pattern:' . $kibana_indexpattern_id,
-                        )
-                    );
-
-                    $bulk_params['body'][] = array(
-                        'doc_as_upsert' => 'true',
-                        'doc' => array (
-                            'type' => 'index-pattern',
-                            'index-pattern' => array(
-                                "title" => $kibana_indexpattern_id,
-                            ),
-                        ),
-                    );
-                }
-                $updateLogs = $client->bulk($bulk_params);
-            }
+            KibanaHelper::kibanaUpsertIndexPattern($client, $templateName . '-*', $templateName . '-*', array(), $updateLogs);
         } catch (\Exception $e) {
             // Make sure to log the message.
             return $this->logJsonResonse(500, $log['message'], array('exception' => $e->getMessage()));
@@ -192,11 +168,16 @@ class DefaultController extends Controller
         if (!property_exists($payload, "id") || !property_exists($payload, "resources") || !property_exists($payload, "config")) {
             return $this->logJsonResonse(400, "Missing keys");
         }
+
         // Recreate the import configuration folder structure
         $udid = $payload->id;
         $resources = $payload->resources;
 
-        $logJson = file_get_contents("/tmp/importer/configurations/{$udid}/log.json");
+        // Get previous logs if any.
+        $logJson = "{}";
+        if (file_exists("/tmp/importer/configurations/{$udid}/log.json")) {
+            $logJson = file_get_contents("/tmp/importer/configurations/{$udid}/log.json");
+        }
         $log = json_decode($logJson);
 
         $fs = $this->container->get('filesystem');
