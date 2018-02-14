@@ -3,6 +3,7 @@
 namespace OpenDataStackBundle\Controller;
 
 use OpenDataStackBundle\Helper\KibanaHelper;
+use OpenDataStackBundle\Helper\LogHelper;
 
 use Elasticsearch\ClientBuilder;
 use Enqueue\Fs\FsConnectionFactory;
@@ -27,6 +28,72 @@ class DefaultController extends Controller
      */
     private $http;
 
+    /**
+     *
+     * @return array DefaultController::jsonResponse() arguments.
+     */
+    private function _createImportConfiguration($payload) {
+        $logstack = array();
+        $jsonResponse = array();
+
+        $udid = $payload->id;
+        $mappings = $payload->config->mappings;
+        $templateName = 'dkan-' . $udid;
+        $templateNameDashStar = $templateName . '-*';
+
+        // For writing config and log files.
+        $fs = $this->container->get('filesystem');
+
+        // 3. Add mapping template to Elasticsearch.
+        // 3.1. init Elasticsearch client.
+        $client = $this->getClientBuilder();
+
+        // (re)Create Template mapping for indexes under this import
+        // configuration.
+        if ($client->indices()->existsTemplate(['name' => $templateName])) {
+            $clientDeleteTemplateResponse = $client->indices()->deleteTemplate(['name' => $templateName]);
+
+            $logstack[] = LogHelper::prepareLog("previous {$templateName} mapping template found and deleted",
+                $clientDeleteTemplateResponse);
+        }
+
+        $clientPutTemplateResponse = $client->indices()->putTemplate([
+            'name' => $templateName,
+            'body' => [
+                'index_patterns' => [$templateName . '-*'],
+                'settings' => ['number_of_shards' => 1],
+                'mappings' => $mappings
+            ]
+        ]);
+
+        // We have the mapping in ES by this time, save the config and add log.
+        LogHelper::persisteJson($fs, "{$udid}", $payload, 'config.json');
+        $logstack[] = LogHelper::prepareLog("dataset {$udid} created.", $clientPutTemplateResponse);
+
+        // Create minimal kibana index pattern. The fields will be updated
+        // during the data upload.
+        $updateLogs = array();
+        $message = "Created Kibana {$templateNameDashStar} index-pattern.";
+        $status = 200;
+        try {
+            KibanaHelper::kibanaUpsertIndexPattern($client, $templateNameDashStar,
+                $templateNameDashStar, array(), $updateLogs);
+        } catch (\Exception $e) {
+            // Make sure to log the message.
+            $status = 500;
+            $message ="Failed to create Kibana {$templateNameDashStar} index-pattern.";
+        }
+        finally {
+            // Get the status of the ES request.
+            $status = !empty($updateLogs['status']) ? $updateLogs['status'] : $status;
+
+            // Save the log stack.
+            $logstack[] = LogHelper::prepareLog($message, $updateLogs);
+            LogHelper::persisteJson($fs, "{$udid}", $logstack, 'log.json');
+
+            return array($status, $message, $updateLogs);
+        }
+    }
 
     /**
      * Add Import Configuration.
@@ -46,93 +113,36 @@ class DefaultController extends Controller
      */
     public function addImportConfigurationAction(Request $request)
     {
+        $logstack = [];
         $payloadJson = $request->getContent();
 
         // 1. Request & Data Validation
 
         if (!$payloadJson) {
-            return $this->logJsonResonse(400, "empty config parameters");
+            return $this->jsonResponse(400, "empty config parameters");
         }
 
         $payload = json_decode($payloadJson);
 
         if (json_last_error() != JSON_ERROR_NONE) {
-            return $this->logJsonResonse(400, json_last_error_msg());
+            return $this->jsonResponse(400, json_last_error_msg());
         }
 
-        if (!property_exists($payload, "id") || !property_exists($payload, "type") || !property_exists($payload, "config")) {
-            return $this->logJsonResonse(400, "Missing keys");
+        if (!property_exists($payload, "id")
+            || !property_exists($payload, "type")
+            || !property_exists($payload, "config")
+        ) {
+            return $this->jsonResponse(400, "Missing keys");
         }
-
-        $udid = $payload->id;
-        $fs = $this->container->get('filesystem');
 
         if ($fs->exists("/tmp/importer/configurations/{$udid}")) {
-            return $this->logJsonResonse(400, "Import configuration exist already");
+            return $this->jsonResponse(400, "Import configuration exist already", array());
         }
 
-        // 2. Persist import-configuration in the filesystem
-        try {
-            $fs->mkdir("/tmp/importer/configurations/{$udid}");
-            chown("/tmp/importer/configurations", "www-data");
-            chgrp("/tmp/importer/configurations", "www-data");
+        list($status, $message, $info) = $this->_createImportConfiguration($payload);
 
-        } catch (IOException $exception) {
-            return $this->logJsonResonse(400, $exception->getMessage());
-        }
-
-        // 3. Add mapping template to Elasticsearch.
-        // 3.1. init Elasticsearch client.
-        $client = $this->getClientBuilder();
-
-        // 3.2. (re)Create Template mapping for indexes under this import
-        // configuration.
-        $templateName = 'dkan-' . $udid;
-        $mappings = $payload->config->mappings;
-
-        if ($client->indices()->existsTemplate(['name' => $templateName])) {
-            $client->indices()->deleteTemplate(['name' => $templateName]);
-        }
-
-        $elasticsearch = $client->indices()->putTemplate([
-            'name' => $templateName,
-            'body' => [
-                'index_patterns' => [$templateName . '-*'],
-                'settings' => ['number_of_shards' => 1],
-                'mappings' => $mappings
-            ]
-        ]);
-
-        // Persist response to log file.
-        $date = new \DateTime('now');
-        $timestamp = $date->format('Y-m-d H:i:s');
-        $log = [
-            "message" => "dataset {$udid} created at {$timestamp}",
-            "created_at" => $timestamp,
-            "elasticsearch" => $elasticsearch,
-        ];
-
-        $logJson = json_encode($log);
-        file_put_contents("/tmp/importer/configurations/{$udid}/log.json", $logJson);
-        file_put_contents("/tmp/importer/configurations/{$udid}/config.json", $payloadJson);
-
-        // Create minimal kibana index pattern. The fields will be updated
-        // during the data upload.
-        $updateLogs = array();
-        try {
-            KibanaHelper::kibanaUpsertIndexPattern($client, $templateName . '-*', $templateName . '-*', array(), $updateLogs);
-        } catch (\Exception $e) {
-            // Make sure to log the message.
-            return $this->logJsonResonse(500, $log['message'], array('exception' => $e->getMessage()));
-        }
-
-        // TODO update the log file?
-        $log['kibana'] = $updateLogs;
-
-        // Respond successfully for import configuration added.
-        return $this->logJsonResonse(200, $log['message'], $log);
+        return $this->jsonResponse($status, $message, $info);
     }
-
 
     /**
      * Update Import Configuration
@@ -156,17 +166,21 @@ class DefaultController extends Controller
         // 1. Request & Data Validation
 
         if (!$payloadJson) {
-            return $this->logJsonResonse(400, "empty config parameters");
+            return $this->jsonResponse(400, "empty config parameters");
         }
 
         $payload = json_decode($payloadJson);
 
         if (json_last_error() != JSON_ERROR_NONE) {
-            return $this->logJsonResonse(400, json_last_error_msg());
+            return $this->jsonResponse(400, json_last_error_msg());
         }
 
-        if (!property_exists($payload, "id") || !property_exists($payload, "resources") || !property_exists($payload, "config")) {
-            return $this->logJsonResonse(400, "Missing keys");
+        if (!property_exists($payload, "id")
+            || !property_exists($payload, "type")
+            || !property_exists($payload, "resources")
+            || !property_exists($payload, "config")
+        ) {
+            return $this->jsonResponse(400, "Missing keys");
         }
 
         // Recreate the import configuration folder structure
@@ -178,70 +192,50 @@ class DefaultController extends Controller
         if (file_exists("/tmp/importer/configurations/{$udid}/log.json")) {
             $logJson = file_get_contents("/tmp/importer/configurations/{$udid}/log.json");
         }
-        $log = json_decode($logJson);
+        // Make sure to decode to an array to be able to update the stack later on.
+        $logstack = json_decode($logJson, TRUE);
 
+        // Delete old data.
         $fs = $this->container->get('filesystem');
+
         try {
             $fs->remove("/tmp/importer/configurations/{$udid}");
-            $fs->mkdir("/tmp/importer/configurations/{$udid}");
         } catch (IOException $exception) {
-            return $this->logJsonResonse(400, $exception->getMessage());
-        }
-        // Recreate index template mapping in elasticsearch
-        $client = $this->getClientBuilder();
-
-        $templateName = 'dkan-' . $udid;
-        $mappings = $payload->config->mappings;
-
-        if ($client->indices()->existsTemplate(['name' => $templateName])) {
-            $client->indices()->deleteTemplate(['name' => $templateName]);
+            return $this->jsonResponse(400, "Failed to delete current {$udid} data.", $exception->getMessage());
         }
 
-        $elasticsearch = $client->indices()->putTemplate([
-            'name' => $templateName,
-            'body' => [
-                'index_patterns' => [$templateName . '-*'],
-                'settings' => ['number_of_shards' => 1],
-                'mappings' => $mappings
-            ]
-        ]);
+        // Add the operation to the logs and restore them to file. Reset the log stack.
+        $logstack[] = LogHelper::prepareLog("Deleted old configuration and resources.");
+        LogHelper::persisteJson($fs, "{$udid}", $logstack, 'log.json');
+        $logstack = array();
 
-        $log->elasticsearch = $elasticsearch;
-        $logJson = json_encode($log);
-        file_put_contents("/tmp/importer/configurations/{$udid}/log.json", $logJson);
-        file_put_contents("/tmp/importer/configurations/{$udid}/config.json", $payloadJson);
+        // Create the import configuration.
+        list($status, $message, $info) = $this->_createImportConfiguration($payload);
 
-        // 3. Produce messages for the resources provided
-        $connectionFactory = new FsConnectionFactory('/tmp/importer/enqueue');
-        $context = $connectionFactory->createContext();
+        if ($status != 200) {
+            // Creating the import configuration failed. Propagate.
+            return $this->jsonResponse($status, $message, $info);
+        }
+
+        // Produce messages for the resources provided
         foreach ($resources as $resource) {
-           $this->importSingleResource($payload, $resource, $udid, $context);
+           $this->importSingleResource($payload, $resource, $udid);
         }
 
-        return $this->logJsonResonse(200, "Resources for import configuration {$udid} are queued");
+        $message = "Resources for import configuration {$udid} are queued.";
+        $logstack[] = LogHelper::prepareLog($message);
+        LogHelper::persisteJson($fs, "{$udid}", $logstack, 'log.json');
+        return $this->jsonResponse(200, $message, $logstack);
     }
 
     /**
-     * Queue a single resource
+     * Queue a single resource.
      */
-    private function importSingleResource($payload, $resource, $udid, $context)
+    private function importSingleResource($payload, $resource, $udid)
     {
-        // Prepare logs
-        $date = new \DateTime('now');
-        $timestamp = $date->format('Y-m-d H:i:s');
-        $log = [
-            "message" => "resource {$resource->id} created at {$timestamp}",
-            "created_at" => $timestamp,
-            "status" => "queued"
-        ];
-        $logJson = json_encode($log);
-        // Make sure the destination directory exists
-        $fs = $this->container->get('filesystem');
-        $dest = "/tmp/importer/configurations/{$udid}/{$resource->id}";
-        $fs->mkdir($dest, 0777, TRUE);
-        file_put_contents("{$dest}/log.json", $logJson);
-        // Produce a message to process in the queue
-        chown("/tmp/importer/enqueue", "www-data");
+        $connectionFactory = new FsConnectionFactory('/tmp/importer/enqueue');
+        $context = $connectionFactory->createContext();
+
         // Prepare data
         $data = [
             'importer' => $payload->type,
@@ -249,12 +243,23 @@ class DefaultController extends Controller
             'udid' => $udid,
             'id' => $resource->id
         ];
+
         // Queue data
         $queue = $context->createQueue('importQueue');
         $context->createProducer()->send(
             $queue,
             $context->createMessage(json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES))
         );
+
+        // Logs.
+        $logstack = [];
+        $logstack[] = [
+            "message" => "resource {$resource->id} created.",
+            "created_at" => date('Y-m-d H:i:s'),
+            "status" => "queued"
+        ];
+
+        LogHelper::persisteJson($this->container->get('filesystem'), "{$udid}/{$resource->id}", $logstack, 'log.json');
     }
 
     /**
@@ -289,18 +294,18 @@ class DefaultController extends Controller
     {
 
         if (!file_exists("/tmp/importer/configurations/{$udid}")) {
-            return $this->logJsonResonse(404, "no configuration with the udid: {$udid}");
+            return $this->jsonResponse(404, "no configuration with the udid: {$udid}");
         }
 
         if (!file_exists("/tmp/importer/configurations/{$udid}/{$resourceId}")) {
-            return $this->logJsonResonse(404, "no resource with the udid: {$resourceId}");
+            return $this->jsonResponse(404, "no resource with the udid: {$resourceId}");
         }
 
         // parse log file and return the persisted status
         $logJson = file_get_contents("/tmp/importer/configurations/{$udid}/{$resourceId}/log.json");
         $log = json_decode($logJson);
 
-        return $this->logJsonResonse(200, $log->message, ["flag" => $log->status]);
+        return $this->jsonResponse(200, $log->message, ["flag" => $log->status]);
     }
 
 
@@ -351,7 +356,7 @@ class DefaultController extends Controller
             $message = "No result";
         }
         $status = ($listResources) ? 200 : 404;
-        return $this->logJsonResonse($status, $message, ["ids" => $listResources]);
+        return $this->jsonResponse($status, $message, ["ids" => $listResources]);
 
     }
 
@@ -383,14 +388,14 @@ class DefaultController extends Controller
     {
 
         if (!file_exists("/tmp/importer/configurations/{$udid}")) {
-            return $this->logJsonResonse(404, "no configuration with the udid: {$udid}");
+            return $this->jsonResponse(404, "no configuration with the udid: {$udid}");
         }
 
         // parse log file and return the persisted status
         $logJson = file_get_contents("/tmp/importer/configurations/{$udid}/log.json");
         $log = json_decode($logJson);
 
-        return $this->logJsonResonse(200, $log->message);
+        return $this->jsonResponse(200, $log->message);
     }
 
     /**
@@ -433,7 +438,7 @@ class DefaultController extends Controller
             $message = "No result";
         }
         $status = ($listImportConfigurations) ? 200 : 404;
-        return $this->logJsonResonse($status, $message, ["ids" => $listImportConfigurations]);
+        return $this->jsonResponse($status, $message, ["ids" => $listImportConfigurations]);
     }
 
     /**
@@ -462,11 +467,11 @@ class DefaultController extends Controller
     public function deleteConfigurationAction($uuid)
     {
         if (!$uuid) {
-            return $this->logJsonResonse(400, "uuid parameters required");
+            return $this->jsonResponse(400, "uuid parameters required");
         }
 
         if (!file_exists("/tmp/importer/configurations/{$uuid}")) {
-            return $this->logJsonResonse(404, "no configuration with the uuid: {$uuid}");
+            return $this->jsonResponse(404, "no configuration with the uuid: {$uuid}");
         }
 
         // Remove the import configurations folder, template and related indexes
@@ -477,10 +482,10 @@ class DefaultController extends Controller
             $this->indexTemplateDeleteAction($uuid, $client);
             $fs->remove("/tmp/importer/configurations/{$uuid}");
         } catch (\Exception $exception) {
-            return $this->logJsonResonse(400, $exception->getMessage());
+            return $this->jsonResponse(400, $exception->getMessage());
         }
 
-        return $this->logJsonResonse(200, "The dataset with the uuid: {$uuid} has been deleted");
+        return $this->jsonResponse(200, "The dataset with the uuid: {$uuid} has been deleted");
     }
 
     /**
@@ -565,15 +570,15 @@ class DefaultController extends Controller
     public function requestClearAction($uuid, $resourceId)
     {
         if (!$uuid || !$resourceId) {
-            return $this->logJsonResonse(400, "uuid and resourceId parameters are required!");
+            return $this->jsonResponse(400, "uuid and resourceId parameters are required!");
         }
 
         if (!file_exists("/tmp/importer/configurations/{$uuid}")) {
-            return $this->logJsonResonse(404, "No configuration with the uuid: {$uuid}");
+            return $this->jsonResponse(404, "No configuration with the uuid: {$uuid}");
         }
 
         if (!file_exists("/tmp/importer/configurations/{$uuid}/{$resourceId}")) {
-            return $this->logJsonResonse(404, "No resource with the uuid: {$resourceId}");
+            return $this->jsonResponse(404, "No resource with the uuid: {$resourceId}");
         }
 
         // Remove the resource folder
@@ -586,10 +591,10 @@ class DefaultController extends Controller
                 $client->indices()->delete(['index' => $indexName]);
             }
         } catch (\Exception $exception) {
-            return $this->logJsonResonse(400, $exception->getMessage());
+            return $this->jsonResponse(400, $exception->getMessage());
         }
 
-        return $this->logJsonResonse(200, "The resource with the {$resourceId} has been deleted");
+        return $this->jsonResponse(200, "The resource with the {$resourceId} has been deleted");
     }
 
     /**
@@ -617,25 +622,25 @@ class DefaultController extends Controller
         $payloadJson = $request->getContent();
 
         if (!$payloadJson) {
-            return $this->logJsonResonse(400, "empty config parameters");
+            return $this->jsonResponse(400, "empty config parameters");
         }
 
         $payload = json_decode($payloadJson);
 
         if (json_last_error() != JSON_ERROR_NONE) {
-            return $this->logJsonResonse(400, json_last_error_msg());
+            return $this->jsonResponse(400, json_last_error_msg());
         }
 
         if (!property_exists($payload, "id") || !property_exists($payload, "type")
             || !property_exists($payload, "url") || !property_exists($payload, "udid")) {
-            return $this->logJsonResonse(400, "Missing keys");
+            return $this->jsonResponse(400, "Missing keys");
         }
 
         $udid = $payload->udid;
         $resourceId = $payload->id;
 
         if (!file_exists("/tmp/importer/configurations/{$udid}")) {
-            return $this->logJsonResonse(404, "no configuration with the udid: {$udid}");
+            return $this->jsonResponse(404, "no configuration with the udid: {$udid}");
         }
 
         // 2. Update import config status to : ** queued **
@@ -674,7 +679,7 @@ class DefaultController extends Controller
             $context->createMessage(json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES))
         );
 
-        return $this->logJsonResonse(200, "Resource {$resourceId} for import configuration {$udid} is queued");
+        return $this->jsonResponse(200, "Resource {$resourceId} for import configuration {$udid} is queued");
     }
 
     /**
@@ -683,17 +688,16 @@ class DefaultController extends Controller
      * @param $status 200:success , 40* for failed
      * @param $message
      * @param array|NULL $info
+     *
      * @return \Symfony\Component\HttpFoundation\JsonResponse
      */
-    private function logJsonResonse($status, $message, array $info = null)
+    private function jsonResponse($status, $message, array $info = null)
     {
         $response = new JsonResponse(
             [
-                "log" => [
-                    "status" => ($status == 200 ? "success" : "fail"),
-                    "message" => $message,
-                    "info" => $info
-                ]
+                "status" => ($status == 200 ? "success" : "fail"),
+                "message" => $message,
+                "info" => $info
             ],
             $status
         );

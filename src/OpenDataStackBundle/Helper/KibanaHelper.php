@@ -12,7 +12,7 @@ class KibanaHelper
     /**
      *
      */
-    public static function kibanaGetFieldMapping(Client $client, $index = '') {
+    public static function kibanaGetFieldMapping(Client $client, $index = '', &$logs = array()) {
         $index_pattern_fields = array();
         // Get mappings for all types in 'my_index'.
         $params = [
@@ -55,7 +55,7 @@ class KibanaHelper
     }
 
     /**
-     *
+     * @return void
      */
     public static function kibanaUpsertIndexPattern(Client $client, $kibana_indexpattern_id, $kibana_indexpattern_title, $kibana_indexpattern_fields = array(), &$logs) {
         // Get all of the available kibana indexs.
@@ -82,7 +82,8 @@ class KibanaHelper
                     ),
                 );
             }
-            $updateLogs = $client->bulk($bulk_params);
+
+            $logs = $client->bulk($bulk_params);
         }
     }
 }

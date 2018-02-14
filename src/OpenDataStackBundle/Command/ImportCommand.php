@@ -3,6 +3,7 @@
 namespace OpenDataStackBundle\Command;
 
 use OpenDataStackBundle\Helper\KibanaHelper;
+use OpenDataStackBundle\Helper\LogHelper;
 
 use Elasticsearch\ClientBuilder;
 use Enqueue\Consumption\QueueConsumer;
@@ -13,6 +14,8 @@ use Interop\Queue\PsrProcessor;
 use League\Csv\Reader;
 use Symfony\Bundle\FrameworkBundle\Command\ContainerAwareCommand;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Filesystem\Exception\IOExceptionInterface;
 
 use Symfony\Component\Console\Output\OutputInterface;
 
@@ -35,7 +38,6 @@ class ImportCommand extends ContainerAwareCommand
 
         // Initialise a Queue consumer
         $connectionFactory = new FsConnectionFactory('/tmp/importer/enqueue');
-        //TODO: chown '/tmp/importer/enqueue' to 'www-data'
         $context = $connectionFactory->createContext();
         $importQueue = $context->createQueue('importQueue');
         $queueConsumer = new QueueConsumer($context);
@@ -49,9 +51,13 @@ class ImportCommand extends ContainerAwareCommand
 
         // Anonymous block function to handle incoming requests
         $queueConsumer->bind('importQueue', function (PsrMessage $message) use (&$output, $client) {
-            $output->writeln("Processing Job Import");
+            $output->writeln("-- import job INIT --");
 
-            // Parse payload from the REST call
+            // Inits for logging.
+            $logstack = array();
+            $fs = new Filesystem();
+
+            // Parse payload from the REST call.
             $data = json_decode($message->getBody(), true);
             $udid = $data['udid'];
             $resourceId = $data['id'];
@@ -64,52 +70,53 @@ class ImportCommand extends ContainerAwareCommand
             $indexType = key($mapping);
 
             $output->writeln("Import Type: " . $data['importer']);
+            $output->writeln("UDID: {$udid}");
+            $output->writeln("Resource ID: {$resourceId}");
             $output->writeln("URI: " . $data['uri']);
 
-            // Update import config status to : ** importing **
-            $log = null;
-            if (file_exists("/tmp/importer/configurations/{$udid}/{$resourceId}/log.json")) {
-                $logJson = file_get_contents("/tmp/importer/configurations/{$udid}/{$resourceId}/log.json");
-                $log = json_decode($logJson);
-            } else {
-                $log = new \stdClass;
-            }
+            // Log.
+            $message = "Import process started.";
+            $logstack[] = LogHelper::prepareLog($message);
+            $output->writeln($message);
 
-            $log->status = "importing";
-            $logJson = json_encode($log);
-            file_put_contents("/tmp/importer/configurations/{$udid}/{$resourceId}/log.json", $logJson);
-
-            // 1. Download CSV Resource
+            // Download CSV Resource
             $uniqueFileName = vsprintf("resource_%s.csv", uniqid());
             $filePath = "/tmp/importer/configurations/" . $udid . "/" . $resourceId . "/" . $uniqueFileName;
             $uri = $data['uri'];
 
-            // if the download fails , update log status to **error** and remove the message from the queue
+            // If the download fails , update log status to **error** and
+            // remove the message from the queue.
             if (!file_put_contents($filePath, fopen($uri, 'r'))) {
-                $log->status = "error";
-                $logJson = json_encode($log);
-                file_put_contents("/tmp/importer/configurations/{$udid}/{$resourceId}/log.json", $logJson);
+                $message = "Failed to download the CSV file. Aborting.";
+                $logstack[] = LogHelper::prepareLog($message);
+                $output->writeln($message);
 
                 return PsrProcessor::REJECT;
             }
 
-            $output->writeln("Resource for dataset({$udid}) downloaded successfully");
+            $message = "Resource {$resourceId} for dataset({$udid}) downloaded successfully";
+            $logstack[] = LogHelper::prepareLog($message);
+            $output->writeln($message);
 
-            // 2. Parse CSV Resource
+            // Parse CSV Resource.
             $csv = Reader::createFromPath($filePath, 'r');
             $csv->setHeaderOffset(0);
 
             $header = $csv->getHeader(); //returns the CSV header record
             $records = $csv->getRecords(); //returns all the CSV records as an Iterator object
 
-            // 3. Clear & Recreate index
+            // Clear & Recreate index.
             $index = 'dkan-' . $udid . '-' . $resourceId;
             if ($client->indices()->exists(['index' => $index])) {
                 $client->indices()->delete(['index' => $index]);
             }
             $response = $client->indices()->create(['index' => $index]);
 
-            // 4. Batch index 1000 records at a time
+            $message = "Elasticsearch index cleared and recreated.";
+            $logstack[] = LogHelper::prepareLog($message);
+            $output->writeln($message);
+
+            // Batch index 1000 records at a time.
             foreach ($records as $key => $rowFields) {
                 $params['body'][] = [
                     'index' => [
@@ -120,40 +127,56 @@ class ImportCommand extends ContainerAwareCommand
 
                 $params['body'][] = $rowFields;
 
-                // Every 1000 documents stop and send the bulk request
+                // Every 1000 documents stop and send the bulk request.
                 if ($key % 1000 == 0) {
                     $response = $client->bulk($params);
                     $params = ['body' => []];
                 }
             }
 
-            // Send the last batch
+            // Send the last batch.
             if (!empty($params['body'])) {
                 $response = $client->bulk($params);
             }
 
+            $message = "CSV file indexed.";
+            $logstack[] = LogHelper::prepareLog($message);
+            $output->writeln($message);
+
             // The Kibana index-pattern was created in the HTTP request but
             // with empty settings. Update the index-pattern fields.
+            $kibanaIndexPatternResource = 'dkan-' . $udid . '-*';
+            $kibanaIndexPatternGlobal = 'dkan-*';
             $updateLogs = array();
-            $index_pattern_fields = KibanaHelper::kibanaGetFieldMapping($client, $index);
+            $index_pattern_fields = KibanaHelper::kibanaGetFieldMapping($client, $kibanaIndexPatternResource);
 
             // Update Kibana index patterns fields mapping for all of the
             // .kibana indices.
-            KibanaHelper::kibanaUpsertIndexPattern($client, 'dkan-' . $udid . '-*',
-                'dkan-' . $udid . '-*', $index_pattern_fields, $updateLogs);
+            KibanaHelper::kibanaUpsertIndexPattern($client, $kibanaIndexPatternResource,
+                $kibanaIndexPatternResource, $index_pattern_fields, $updateLogs);
+
+            $message = "Kibana '{$kibanaIndexPatternResource}' index-pattern fields updated.";
+            $logstack[] = LogHelper::prepareLog($message, $updateLogs);
+            $output->writeln($message);
 
             // Update the Full "dkan-*" kibana index-pattern.
             $index_pattern_fields = KibanaHelper::kibanaGetFieldMapping($client);
-            KibanaHelper::kibanaUpsertIndexPattern($client, 'dkan-*', 'dkan-*',
+            KibanaHelper::kibanaUpsertIndexPattern($client, $kibanaIndexPatternGlobal, $kibanaIndexPatternGlobal,
                 $index_pattern_fields, $updateLogs);
 
-            // 5. Update import config status to : ** importing **
-            $logJson = file_get_contents("/tmp/importer/configurations/{$udid}/{$resourceId}/log.json");
-            $log = json_decode($logJson);
-            $log->status = "done";
-            $logJson = json_encode($log);
-            file_put_contents("/tmp/importer/configurations/{$udid}/{$resourceId}/log.json", $logJson);
+            $message = "Kibana '{$kibanaIndexPatternGlobal}' index-pattern fields updated.";
+            $logstack[] = LogHelper::prepareLog($message, $updateLogs);
+            $output->writeln($message);
 
+            // Last log entry for this job.
+            $message = "Import process finished.";
+            $logstack[] = LogHelper::prepareLog($message);
+            $output->writeln($message);
+
+            // Persiste the logs.
+            LogHelper::persisteJson($fs, "{$udid}/{$resourceId}", $logstack, 'log.json');
+
+            $output->writeln("-- import job DONE --");
             return PsrProcessor::ACK;
         });
 
