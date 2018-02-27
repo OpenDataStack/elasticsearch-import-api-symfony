@@ -4,13 +4,13 @@ LABEL "maintainer"="Noomane Achraf<noomane@angrycactus.io>"
 
 # Pull source files.
 # Supervisor
-COPY config/supervisord/conf.d/ /etc/supervisor/conf.d/
+COPY ./config/supervisord/conf.d/ /etc/supervisor/conf.d/
 # Nginx
 COPY ./config/nginx/default.conf /etc/nginx/sites-available/default
 # PHP
-COPY config/php/fpm/pool.d/www.conf /etc/php/7.0/fpm/pool.d/www.conf
+COPY ./config/php/fpm/pool.d/www.conf /etc/php/7.0/fpm/pool.d/www.conf
 # Symfony APP
-COPY . /var/www/project
+COPY ./ /var/www/project
 # Exec script.
 COPY ./scripts/start.sh /start.sh
 
