@@ -145,17 +145,23 @@ class ImportCommand extends ContainerAwareCommand
 
             // The Kibana index-pattern was created in the HTTP request but
             // with empty settings. Update the index-pattern fields.
-            $kibanaIndexPatternResource = 'dkan-' . $udid . '-*';
+            $kibanaIndexPatternResource_id = 'dkan-' . $udid . '-*';
+            $kibanaIndexPatternResource_title = 'dkan-' . $udid . '-*';
+            // Userfriendly title for the index-pattern if available.
+            if (!empty($config['title'])) {
+                $kibanaIndexPatternResource_title = $config['title'];
+            }
+
             $kibanaIndexPatternGlobal = 'dkan-*';
             $updateLogs = array();
-            $index_pattern_fields = KibanaHelper::kibanaGetFieldMapping($client, $kibanaIndexPatternResource);
+            $index_pattern_fields = KibanaHelper::kibanaGetFieldMapping($client, $kibanaIndexPatternResource_id);
 
             // Update Kibana index patterns fields mapping for all of the
             // .kibana indices.
-            KibanaHelper::kibanaUpsertIndexPattern($client, $kibanaIndexPatternResource,
-                $kibanaIndexPatternResource, $index_pattern_fields, $updateLogs);
+            KibanaHelper::kibanaUpsertIndexPattern($client, $kibanaIndexPatternResource_id,
+                $kibanaIndexPatternResource_title, $index_pattern_fields, $updateLogs);
 
-            $message = "Kibana '{$kibanaIndexPatternResource}' index-pattern fields updated.";
+            $message = "Kibana '{$kibanaIndexPatternResource_title}' index-pattern fields updated.";
             $logstack[] = LogHelper::prepareLog($message, $updateLogs);
             $output->writeln($message);
 

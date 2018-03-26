@@ -135,7 +135,10 @@ class DefaultController extends Controller
             return $this->jsonResponse(400, "Missing keys");
         }
 
-        if ($fs->exists("/tmp/importer/configurations/{$udid}")) {
+        // For writing config and log files.
+        $fs = $this->container->get('filesystem');
+
+        if ($fs->exists("/tmp/importer/configurations/" . $payload->id)) {
             return $this->jsonResponse(400, "Import configuration exist already", array());
         }
 
