@@ -1,6 +1,6 @@
 FROM opendatastack/docker-symfony:latest
 
-LABEL "maintainer"="Noomane Achraf<noomane@angrycactus.io>"
+LABEL "maintainer"="Angry Cactus DevOps<devops@angrycactus.io>"
 
 # Pull source files.
 # Supervisor
