@@ -164,10 +164,12 @@ class ImportCommand extends ContainerAwareCommand
             // with empty settings. Update the index-pattern fields.
             $kibanaIndexPatternResource_id = 'dkan-' . $udid . '-*';
             $kibanaIndexPatternResource_title = 'dkan-' . $udid . '-*';
-            // Userfriendly title for the index-pattern if available.
-            if (!empty($config['title'])) {
-                $kibanaIndexPatternResource_title = $config['title'];
-            }
+
+            // User friendly title for the index-pattern if available.
+            // FIXME Loading dashboards with friendly names is failing. Restore after fix.
+            // if (!empty($config['title'])) {
+                // $kibanaIndexPatternResource_title = $config['title'];
+            // }
 
             $kibanaIndexPatternGlobal = 'dkan-*';
             $updateLogs = array();
