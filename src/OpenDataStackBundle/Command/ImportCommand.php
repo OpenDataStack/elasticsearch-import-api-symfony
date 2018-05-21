@@ -6,12 +6,15 @@ use OpenDataStackBundle\Helper\KibanaHelper;
 use OpenDataStackBundle\Helper\LogHelper;
 
 use Elasticsearch\ClientBuilder;
+
 use Enqueue\Consumption\QueueConsumer;
 use Enqueue\Fs\FsConnectionFactory;
 use Interop\Queue\PsrMessage;
-
 use Interop\Queue\PsrProcessor;
+
+use function League\Csv\delimiter_detect;
 use League\Csv\Reader;
+
 use Symfony\Bundle\FrameworkBundle\Command\ContainerAwareCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Filesystem\Filesystem;
@@ -99,11 +102,20 @@ class ImportCommand extends ContainerAwareCommand
             $output->writeln($message);
 
             // Parse CSV Resource.
-            $csv = Reader::createFromPath($filePath, 'r');
-            $csv->setHeaderOffset(0);
+            $csvReader = Reader::createFromPath($filePath, 'r');
 
-            $header = $csv->getHeader(); //returns the CSV header record
-            $records = $csv->getRecords(); //returns all the CSV records as an Iterator object
+            // Determin and set the delimiter using a base supported list of
+            // delimiters.
+            $delimiters_supported = [',', ';', '|', '+'];
+            $delimiters_list = delimiter_detect($csvReader, $delimiters_supported, 50);
+            arsort($delimiters_list);
+            $delimiter = array_keys($delimiters_list)[0];
+            $csvReader->setDelimiter($delimiter);
+
+            $csvReader->setHeaderOffset(0);
+
+            $header = $csvReader->getHeader(); //returns the CSV header record
+            $records = $csvReader->getRecords(); //returns all the CSV records as an Iterator object
 
             // Clear & Recreate index.
             $index = 'dkan-' . $udid . '-' . $resourceId;
@@ -124,6 +136,11 @@ class ImportCommand extends ContainerAwareCommand
                         '_type' => $indexType
                     ]
                 ];
+
+                // Make sure all the rows are UTF-8 formatted.
+                $rowFields = array_map(function ($record) {
+                    return mb_convert_encoding($record, "UTF-8");
+                            }, $rowFields);
 
                 $params['body'][] = $rowFields;
 
