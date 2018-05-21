@@ -1,0 +1,35 @@
+parameters:
+    locale: 'en'
+    secret: 'ThisTokenIsNotSoSecretChangeIt'
+
+
+framework:
+    #esi:             ~
+    #translator:      { fallback: "%locale%" }
+    test: ~
+    assets: false
+    templating: false
+    session:
+        storage_id: session.storage.mock_file
+    secret:          '%secret%'
+    router:          { resource: '%kernel.root_dir%/config/routing.yml' }
+    default_locale:  '%locale%'
+
+monolog:
+    handlers:
+        main:
+            type: 'null'
+            level: 'error'
+
+services:
+    test.message.processor:
+        class: 'Enqueue\Bundle\Tests\Functional\TestProcessor'
+        public: true
+        tags:
+            - { name: 'enqueue.client.processor' }
+
+    test.message.command_processor:
+        class: 'Enqueue\Bundle\Tests\Functional\TestCommandProcessor'
+        public: true
+        tags:
+            - { name: 'enqueue.client.processor' }

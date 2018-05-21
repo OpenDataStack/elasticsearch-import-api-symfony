@@ -1,0 +1,51 @@
+services:
+    enqueue.consumption.extensions:
+        class: 'Enqueue\Consumption\ChainExtension'
+        public: false
+        arguments:
+            - []
+
+    Enqueue\Consumption\QueueConsumer:
+        class: 'Enqueue\Consumption\QueueConsumer'
+        public: true
+        arguments:
+            - '@enqueue.transport.context'
+            - '@enqueue.consumption.extensions'
+            - ~
+            - ~
+
+    # Deprecated. To be removed in 0.10.
+    enqueue.consumption.queue_consumer:
+        public: true
+        alias: 'Enqueue\Consumption\QueueConsumer'
+
+    Enqueue\Symfony\Consumption\ContainerAwareConsumeMessagesCommand:
+        class: 'Enqueue\Symfony\Consumption\ContainerAwareConsumeMessagesCommand'
+        public: true
+        arguments:
+            - '@Enqueue\Consumption\QueueConsumer'
+        tags:
+            - { name: 'console.command' }
+
+    # Deprecated. To be removed in 0.10.
+    enqueue.command.consume_messages:
+        public: true
+        alias: 'Enqueue\Symfony\Consumption\ContainerAwareConsumeMessagesCommand'
+
+    enqueue.transport.rpc_factory:
+        class: 'Enqueue\Rpc\RpcFactory'
+        public: false
+        arguments:
+            - '@enqueue.transport.context'
+
+    Enqueue\Rpc\RpcClient:
+        class: 'Enqueue\Rpc\RpcClient'
+        public: true
+        arguments:
+            - '@enqueue.transport.context'
+            - '@enqueue.transport.rpc_factory'
+
+    # Deprecated. To be removed in 0.10.
+    enqueue.transport.rpc_client:
+        public: true
+        alias: 'Enqueue\Rpc\RpcClient'

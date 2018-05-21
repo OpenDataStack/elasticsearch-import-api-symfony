@@ -1,0 +1,82 @@
+parameters:
+    locale: 'en'
+    secret: 'ThisTokenIsNotSoSecretChangeIt'
+
+
+framework:
+    #esi:             ~
+    #translator:      { fallback: "%locale%" }
+    test: ~
+    assets: false
+    templating: false
+    session:
+        storage_id: session.storage.mock_file
+    secret:          '%secret%'
+    router:          { resource: '%kernel.root_dir%/config/routing.yml' }
+    default_locale:  '%locale%'
+
+monolog:
+    handlers:
+        main:
+            type: 'null'
+            level: 'error'
+
+doctrine:
+    dbal:
+        driver:   "%db.driver%"
+        host:     "%db.host%"
+        port:     "%db.port%"
+        dbname:   "%db.name%"
+        user:     "%db.user%"
+        password: "%db.password%"
+        charset:  UTF8
+
+enqueue:
+    transport:
+        default: 'null'
+        'null': ~
+    client:
+        traceable_producer: true
+    job: true
+    async_events: true
+
+
+services:
+    test_async_listener:
+        class: 'Enqueue\Bundle\Tests\Functional\App\TestAsyncListener'
+        public: true
+        tags:
+            - { name: 'kernel.event_listener', async: true, event: 'test_async', method: 'onEvent' }
+
+    test_command_subscriber_processor:
+        class: 'Enqueue\Bundle\Tests\Functional\App\TestCommandSubscriberProcessor'
+        public: true
+        tags:
+            - { name: 'enqueue.client.processor' }
+
+    test_exclusive_command_subscriber_processor:
+        class: 'Enqueue\Bundle\Tests\Functional\App\TestExclusiveCommandSubscriberProcessor'
+        public: true
+        tags:
+            - { name: 'enqueue.client.processor' }
+
+    test_async_subscriber:
+        class: 'Enqueue\Bundle\Tests\Functional\App\TestAsyncSubscriber'
+        public: true
+        tags:
+            - { name: 'kernel.event_subscriber', async: true }
+
+    test_async_event_transformer:
+        class: 'Enqueue\Bundle\Tests\Functional\App\TestAsyncEventTransformer'
+        public: true
+        arguments:
+            - '@enqueue.transport.default.context'
+        tags:
+            - {name: 'enqueue.event_transformer', eventName: 'test_async', transformerName: 'test_async' }
+            - {name: 'enqueue.event_transformer', eventName: 'test_async_subscriber', transformerName: 'test_async' }
+
+    # overwrite async listener with one based on client producer. so we can use traceable producer.
+    enqueue.events.async_listener:
+        class: 'Enqueue\Bundle\Tests\Functional\App\AsyncListener'
+        public: true
+        arguments: ['@Enqueue\Client\Producer', '@enqueue.events.registry']

@@ -1,0 +1,62 @@
+{
+    "name": "enqueue/enqueue",
+    "type": "library",
+    "description": "Message Queue Library",
+    "keywords": ["messaging", "queue", "amqp", "rabbitmq"],
+    "homepage": "https://github.com/php-enqueue/enqueue-dev",
+    "license": "MIT",
+    "require": {
+        "php": ">=5.6",
+        "queue-interop/queue-interop": "^0.6@dev",
+        "enqueue/null": "^0.8@dev",
+        "ramsey/uuid": "^2|^3.5",
+        "psr/log": "^1"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "~5.5",
+        "symfony/console": "^2.8|^3|^4",
+        "symfony/dependency-injection": "^2.8|^3|^4",
+        "symfony/config": "^2.8|^3|^4",
+        "symfony/event-dispatcher": "^2.8|^3|^4",
+        "symfony/http-kernel": "^2.8|^3|^4",
+        "enqueue/amqp-ext": "^0.8@dev",
+        "enqueue/amqp-lib": "^0.8@dev",
+        "enqueue/amqp-bunny": "^0.8@dev",
+        "enqueue/pheanstalk": "^0.8@dev",
+        "enqueue/gearman": "^0.8@dev",
+        "enqueue/rdkafka": "^0.8@dev",
+        "enqueue/dbal": "^0.8@dev",
+        "enqueue/fs": "^0.8@dev",
+        "enqueue/gps": "^0.8@dev",
+        "enqueue/redis": "^0.8@dev",
+        "enqueue/sqs": "^0.8@dev",
+        "enqueue/stomp": "^0.8@dev",
+        "enqueue/test": "^0.8@dev",
+        "enqueue/simple-client": "^0.8@dev",
+        "empi89/php-amqp-stubs": "*@dev"
+    },
+    "suggest": {
+        "symfony/console": "^2.8|^3|^4 If you want to use li commands",
+        "symfony/dependency-injection": "^2.8|^3|^4",
+        "symfony/config": "^2.8|^3|^4",
+        "enqueue/amqp-ext": "AMQP transport (based on php extension)",
+        "enqueue/stomp": "STOMP transport",
+        "enqueue/fs": "Filesystem transport",
+        "enqueue/redis": "Redis transport",
+        "enqueue/dbal": "Doctrine DBAL transport",
+        "enqueue/sqs": "Amazon AWS SQS transport"
+    },
+    "autoload": {
+        "psr-4": { "Enqueue\\": "" },
+        "files": ["functions_include.php"],
+        "exclude-from-classmap": [
+            "/Tests/"
+        ]
+    },
+    "minimum-stability": "dev",
+    "extra": {
+        "branch-alias": {
+            "dev-master": "0.8.x-dev"
+        }
+    }
+}
