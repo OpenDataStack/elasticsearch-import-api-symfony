@@ -60,7 +60,7 @@ POST /request-import
   "udid": "123-dataset-123", // Dataset udid
   "id": "resource-abc",      // Resource udid
   "type": "opendatastack/csv-importer",
-  "url": "https://cdn.rawgit.com/achoura/elkd/aa0074ac/model_slug.csv"
+  "url": "https://cdn.jsdelivr.net/gh/achoura/elkd@aa0074ac/model_slug.csv"
 }
 ```
 
